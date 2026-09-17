@@ -1363,12 +1363,15 @@ function drawStamp(dst,w,h,S1,col,label){
   if(!$("#p_stamp").checked) return;
   const id=($("#p_id").value||"NYTA").toUpperCase();
   const txt="ID: "+id;
-  const F=Math.max(11,22*S1|0);             // damga punto
-  const MF=Math.max(9,13*S1|0);             // meta punto
+  /* Rozet %60 kucultuldu: punto da, ic bosluklar da ayni carpanla iner ki
+     kutunun oranlari bozulmasin. Alt sinirlar da ayni oranda dustu. */
+  const SC=0.40;
+  const F=Math.max(7,(22*SC*S1)|0);         // damga punto
+  const MF=Math.max(6,(13*SC*S1)|0);        // meta punto
   dst.save();
   dst.font="700 "+F+"px "+CF;
   const tw=dst.measureText(txt).width;
-  const pad=12*S1, bw=tw+pad*2.2, bh=F+18*S1;
+  const pad=12*SC*S1, bw=tw+pad*2.2, bh=F+18*SC*S1;
 
   // birincil hedef: en buyuk gorunur kutu
   /* Rozet en KUCUK gorunur tespite asilir: kadrajin buyuk bir bolumunu
@@ -1377,43 +1380,49 @@ function drawStamp(dst,w,h,S1,col,label){
   let prim=null, best=Infinity;
   if($("#p_boxes").checked){
     for(const b of visibleDets()){
-      const A=b.w*b.h;
-      if(A<best && boxToCanvas(b,w,h).w>8*S1){best=A; prim=b;}
+      const A=b.w*b.h, q=boxToCanvas(b,w,h);
+      // yassilmis kutulari atla: lens kirpmasi bazilarini sifir yukseklige indirir
+      if(A<best && q.w>8*S1 && q.h>8*S1){best=A; prim=b;}
     }
   }
   let bx,by;
-  const gap=10*S1;
+  const gap=10*SC*S1;                       // bosluk da ayni carpanla indi
+  const mg=14*S1;
   if(prim){
     const R=boxToCanvas(prim,w,h);
-    bx=R.x+R.w-bw;                          // sag kenara hizali
-    by=R.y+R.h+gap;                         // kutunun hemen altinda
-    if(by+bh+MF*1.6>h) by=R.y+R.h-bh-gap;   // asagi sigmiyorsa icine al
+    bx=R.x;                                 // kutunun SOL kenarina hizali
+    by=R.y-bh-gap;                          // kutunun hemen USTUNDE
+    /* Yukarida yer yoksa ya da rozet lens cemberinin disina tasiyorsa
+       kutunun sol ust kosesinin icine al. */
+    const fits = by>mg+MF*1.8 &&
+      lensHasPoint(bx,by,w,h) && lensHasPoint(bx+bw,by,w,h) &&
+      lensHasPoint(bx,by+bh,w,h) && lensHasPoint(bx+bw,by+bh,w,h);
+    if(!fits) by=R.y+gap;
   }else{
-    bx=w-bw-18*S1; by=h-bh-18*S1;
+    bx=mg; by=mg+MF*1.8;
   }
-  const mg=14*S1;
   bx=clamp(bx,mg,w-bw-mg);
   by=clamp(by,mg+MF*1.8,h-bh-mg);
 
   if(label){                                 // meta satiri rozetin ustunde
     dst.font="700 "+MF+"px "+CF;
     const lw=dst.measureText(label).width;
-    const lx=Math.min(bx+bw-lw, w-lw-mg);
+    const lx=clamp(bx, mg, w-lw-mg);        // rozetle ayni sol hizada
     dst.globalAlpha=0.5;dst.fillStyle="#000";
-    dst.fillRect(lx-5*S1,by-MF-9*S1,lw+10*S1,MF+7*S1);
+    dst.fillRect(lx-5*SC*S1,by-MF-9*SC*S1,lw+10*SC*S1,MF+7*SC*S1);
     dst.globalAlpha=0.9;dst.fillStyle=col;
-    dst.fillText(label,lx,by-9*S1);
+    dst.fillText(label,lx,by-9*SC*S1);
     dst.globalAlpha=1;
   }
   dst.font="700 "+F+"px "+CF;
   dst.globalAlpha=0.62;dst.fillStyle="#000";
   dst.fillRect(bx,by,bw,bh);
   dst.globalAlpha=1;
-  dst.strokeStyle=col;dst.lineWidth=Math.max(1.5,2*S1);
-  dst.shadowColor=col; dst.shadowBlur=8*S1;    // neon halesi
+  dst.strokeStyle=col;dst.lineWidth=Math.max(1,1.6*S1);
+  dst.shadowColor=col; dst.shadowBlur=5*S1;    // neon halesi
   dst.strokeRect(bx,by,bw,bh);
   dst.fillStyle=col;
-  dst.fillText(txt,bx+pad,by+bh-9*S1);
+  dst.fillText(txt,bx+pad,by+bh-9*SC*S1);
   dst.shadowBlur=0;
   dst.restore();
 }
