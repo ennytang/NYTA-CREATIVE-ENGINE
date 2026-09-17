@@ -1363,11 +1363,12 @@ function drawStamp(dst,w,h,S1,col,label){
   if(!$("#p_stamp").checked) return;
   const id=($("#p_id").value||"NYTA").toUpperCase();
   const txt="ID: "+id;
-  /* Rozet %60 kucultuldu: punto da, ic bosluklar da ayni carpanla iner ki
-     kutunun oranlari bozulmasin. Alt sinirlar da ayni oranda dustu. */
-  const SC=0.40;
-  const F=Math.max(7,(22*SC*S1)|0);         // damga punto
-  const MF=Math.max(6,(13*SC*S1)|0);        // meta punto
+  /* Rozet olcegi. Punto, ic bosluk, cerceve ve hale ayni carpanla iner ki
+     oranlar bozulmasin. Alt sinirlar da carpanla birlikte dusuruldu; aksi
+     halde taban degerler devreye girip kucultmeyi etkisiz birakiyordu. */
+  const SC=0.20;
+  const F=Math.max(4,Math.round(22*SC*S1));  // damga punto
+  const MF=Math.max(3,Math.round(13*SC*S1)); // meta punto
   dst.save();
   dst.font="700 "+F+"px "+CF;
   const tw=dst.measureText(txt).width;
@@ -1418,8 +1419,8 @@ function drawStamp(dst,w,h,S1,col,label){
   dst.globalAlpha=0.62;dst.fillStyle="#000";
   dst.fillRect(bx,by,bw,bh);
   dst.globalAlpha=1;
-  dst.strokeStyle=col;dst.lineWidth=Math.max(1,1.6*S1);
-  dst.shadowColor=col; dst.shadowBlur=5*S1;    // neon halesi
+  dst.strokeStyle=col;dst.lineWidth=Math.max(0.7,4*SC*S1);
+  dst.shadowColor=col; dst.shadowBlur=12*SC*S1;  // neon halesi
   dst.strokeRect(bx,by,bw,bh);
   dst.fillStyle=col;
   dst.fillText(txt,bx+pad,by+bh-9*SC*S1);
