@@ -338,7 +338,8 @@ button.pri:hover:not(:disabled){background:var(--pri);color:#000;box-shadow:0 0 
             <option value="blob">LUM-BLOB</option>
           </select></div>
         <div class="row"><label>min. size %</label><input type="range" id="p_minsz" min="1" max="30" step="0.5" value="5"><output></output></div>
-        <div class="row"><label>labels</label><input type="checkbox" id="p_labels" checked></div>
+        <div class="row"><label>box labels</label><input type="checkbox" id="p_labels"></div>
+        <div class="row"><label>fx text</label><input type="checkbox" id="p_fxtext"></div>
         <div class="row"><label>ID badge</label><input type="checkbox" id="p_stamp" checked></div>
         <div class="row"><label>ID code</label><input type="text" id="p_id" value="NYTA" style="flex:1.35;color:var(--pri);letter-spacing:.2em"></div>
         <button id="redetect" style="margin-top:7px">RE-ACQUIRE</button>
@@ -354,7 +355,7 @@ button.pri:hover:not(:disabled){background:var(--pri);color:#000;box-shadow:0 0 
           <option value="2">2×</option><option value="4">4×</option>
           <option value="8">8×</option><option value="16">16×</option></select></div>
         <div class="row"><label>seed</label><input type="number" id="p_seed" value="7331" style="flex:1.35"></div>
-        <div class="row"><label>title card</label><input type="checkbox" id="p_title" checked></div>
+        <div class="row"><label>title card</label><input type="checkbox" id="p_title"></div>
       </div>
 
       <div class="grp">
@@ -971,12 +972,14 @@ mil:{
       const xx=w*0.08+(w*0.84)*(i/20), len=(i%5===0?12:6)*S1;
       dst.fillRect(xx,h*0.94,Math.max(1,1.2*S1),len);
     }
-    // HUD metinleri
-    const az=((p.t*14)%360).toFixed(1);
-    dst.fillText("FLIR / WHITE-HOT",w*0.06,h*0.085);
-    dst.fillText("AZ "+az.padStart(5,"0")+"   EL -02.4",w*0.06,h*0.085+15*S1);
-    dst.fillText("RNG "+(12.4+Math.sin(p.t)*0.6).toFixed(1)+"M",w*0.06,h*0.085+30*S1);
-    dst.fillText("TRK "+String(p.dets).padStart(2,"0"),w*0.06,h*0.085+45*S1);
+    // HUD metinleri — "fx text" kapaliysa hic cizilmez
+    if(on("p_fxtext")){
+      const az=((p.t*14)%360).toFixed(1);
+      dst.fillText("FLIR / WHITE-HOT",w*0.06,h*0.085);
+      dst.fillText("AZ "+az.padStart(5,"0")+"   EL -02.4",w*0.06,h*0.085+15*S1);
+      dst.fillText("RNG "+(12.4+Math.sin(p.t)*0.6).toFixed(1)+"M",w*0.06,h*0.085+30*S1);
+      dst.fillText("TRK "+String(p.dets).padStart(2,"0"),w*0.06,h*0.085+45*S1);
+    }
     // tarama çizgisi
     const sy=(p.t*0.42%1)*h;
     dst.globalAlpha=0.18;dst.fillRect(0,sy,w,Math.max(1,2*S1));dst.globalAlpha=1;
@@ -1058,15 +1061,17 @@ brutal:{
     const cols=12, rows=7;
     for(let i=1;i<cols;i++){dst.beginPath();dst.moveTo(w*i/cols,0);dst.lineTo(w*i/cols,h);dst.stroke();}
     for(let i=1;i<rows;i++){dst.beginPath();dst.moveTo(0,h*i/rows);dst.lineTo(w,h*i/rows);dst.stroke();}
-    // beton blok tipografi
-    dst.fillStyle="rgba(255,255,255,"+(0.92*p.a)+")";
-    dst.fillRect(w*0.05,h*0.05,w*0.26,h*0.055);
-    dst.fillStyle="#000";
-    dst.font="700 "+(15*S1|0)+"px "+CF;
-    dst.fillText("STRUCTURE / 06",w*0.065,h*0.05+h*0.038);
-    dst.fillStyle="rgba(255,255,255,"+(0.88*p.a)+")";
-    dst.font=(11*S1|0)+"px "+CF;
-    dst.fillText("RAW CONCRETE — NO ORNAMENT",w*0.05,h*0.95);
+    // beton blok tipografi — "fx text" kapaliysa levha da yazi da yok
+    if(on("p_fxtext")){
+      dst.fillStyle="rgba(255,255,255,"+(0.92*p.a)+")";
+      dst.fillRect(w*0.05,h*0.05,w*0.26,h*0.055);
+      dst.fillStyle="#000";
+      dst.font="700 "+(15*S1|0)+"px "+CF;
+      dst.fillText("STRUCTURE / 06",w*0.065,h*0.05+h*0.038);
+      dst.fillStyle="rgba(255,255,255,"+(0.88*p.a)+")";
+      dst.font=(11*S1|0)+"px "+CF;
+      dst.fillText("RAW CONCRETE — NO ORNAMENT",w*0.05,h*0.95);
+    }
     dst.restore();
     // ara ara tam invert
     if(p.rnd()<0.045*p.a){
@@ -1286,10 +1291,14 @@ function drawStamp(dst,w,h,S1,col,label){
   const pad=12*S1, bw=tw+pad*2.2, bh=F+18*S1;
 
   // birincil hedef: en buyuk gorunur kutu
-  let prim=null, best=0;
+  /* Rozet en KUCUK gorunur tespite asilir: kadrajin buyuk bir bolumunu
+     kaplayan kutu yerine tek bir nesneyi isaretlemek isteniyor. "min. size %"
+     zaten gurultuyu eliyor, dolayisiyla bu en kucuk gercek hedef demek. */
+  let prim=null, best=Infinity;
   if($("#p_boxes").checked){
     for(const b of visibleDets()){
-      if(b.w*b.h>best){best=b.w*b.h; prim=b;}
+      const A=b.w*b.h;
+      if(A<best && boxToCanvas(b,w,h).w>8*S1){best=A; prim=b;}
     }
   }
   let bx,by;
@@ -1402,8 +1411,9 @@ function renderFrame(dst,w,h,t){
     dst.fillText(top.a.name,(18+64)*S1,34*S1);
     dst.restore();
   }
-  drawStamp(dst,w,h,S1,top.a.col,
-    "F"+String(f).padStart(5,"0")+"  "+w+"×"+h+"  TRK "+String(nDet).padStart(2,"0"));
+  drawStamp(dst,w,h,S1,top.a.col, on("p_fxtext")
+    ? "F"+String(f).padStart(5,"0")+"  "+w+"×"+h+"  TRK "+String(nDet).padStart(2,"0")
+    : null);
 }
 
 /* ───────────────────────────────────────────────────────────────────────────
@@ -1697,7 +1707,7 @@ document.querySelectorAll('.mfd input[type=range]').forEach(r=>{
 ["p_res","p_fit"].forEach(id=>{const e=$("#"+id); if(e) e.onchange=()=>{
   S.baseKey="";S.stillCache.clear();applyRes();draw();};});
 {const e=$("#p_speed"); if(e) e.onchange=draw;}
-["p_boxes","p_labels","p_stamp","p_title","p_minsz","p_id","p_fps"].forEach(id=>{
+["p_boxes","p_labels","p_stamp","p_title","p_minsz","p_id","p_fps","p_fxtext"].forEach(id=>{
   const e=$("#"+id); if(e) e.addEventListener("input",draw), e.addEventListener("change",draw);
 });
 /* base'i yeniden hesaplatmasi gerekenler: mercek, kumlama ve seed (kum deseni) */
@@ -1856,7 +1866,7 @@ const PIDS=["p_falloff","p_floor","p_spread","p_halo","p_con","p_crush","p_fx","
   "p_fish","p_fishamt","p_fishcnr","p_fishca",
   "p_lensr","p_lensrim","p_lensw","p_outdesat","p_outgrain",
   "p_grain","p_grainamt","p_grainsz","p_graincon",
-  "p_boxes","p_det","p_minsz","p_labels","p_stamp","p_id",
+  "p_boxes","p_det","p_minsz","p_labels","p_stamp","p_id","p_fxtext",
   "p_seg","p_xf","p_fps","p_seed","p_title","p_res","p_fit","p_scale","p_speed","p_crt"];
 
 function snapState(){
@@ -1896,6 +1906,30 @@ function record(){
   if(hist.length>HMAX) hist.shift();
   hi=hist.length-1;
   paintUndo();
+  saveSession();
+}
+
+/* ── oturum hafizasi ───────────────────────────────────────────────────────
+   Uygulama kapanip acildiginda son ayarlar yerinde kalsin. Preset slotlari
+   bilincli olarak kaydedilen anlar; bu ise her commit'te sessizce yazilan
+   "en son nerede birakildi" kaydi. Bozuk bir kayit acilisi kilitlemesin
+   diye okuma hatasi kaydi siler ve varsayilanlara doner. */
+const SESS_KEY="nyta.session";
+function saveSession(){
+  try{ localStorage.setItem(SESS_KEY,JSON.stringify(snapState())); }catch(_){}
+}
+function restoreSession(){
+  let st=null;
+  try{ st=JSON.parse(localStorage.getItem(SESS_KEY)||"null"); }catch(_){ st=null; }
+  if(!st) return;
+  try{
+    applyState(st);
+    hist=[snapState()]; hi=0; paintUndo();
+    fitStage();
+  }catch(err){
+    try{ localStorage.removeItem(SESS_KEY); }catch(_){}
+    console.warn("oturum geri yuklenemedi, varsayilanlara donuldu:",err);
+  }
 }
 function paintUndo(){
   $("#t_undo").textContent=hi+"/"+(hist.length-1);
@@ -2037,7 +2071,8 @@ $("#p_impf").onchange=ev=>{
 };
 
 paintPresets(); paintUndo();
-if(!lsOK) flash("warning: presets cannot persist — export as JSON",2);
+restoreSession();
+if(!lsOK) flash("warning: settings and presets cannot persist here",2);
 console.log("[NYTA] MFD shell ready — IR night mode / undo + presets");
 })();
 </script>
