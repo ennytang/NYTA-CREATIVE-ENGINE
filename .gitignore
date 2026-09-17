@@ -1,0 +1,18 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  ALLOW-LIST .gitignore
+#  This repository lives inside a working folder that also holds a Chrome
+#  profile, rendered output and local scratch. Rather than blacklisting those
+#  one by one, everything is ignored by default and only the files listed
+#  below are ever tracked. Nothing can leak by accident.
+# ─────────────────────────────────────────────────────────────────────────────
+*
+
+!.gitignore
+!README.md
+!LICENSE
+!nyta_creative_engine.html
+!NYTA.bat
+!install_shortcut.ps1
+!nyta.ico
+!docs/
+!docs/*.png
