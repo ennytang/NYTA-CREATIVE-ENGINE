@@ -165,7 +165,7 @@ button.pri:hover:not(:disabled){background:var(--pri);color:#000;box-shadow:0 0 
 .ae .sb{color:var(--tx2);font-size:10.5px;margin:3px 0 5px 13px;letter-spacing:.03em}
 
 /* ── sahne ───────────────────────────────────────────────────────────────── */
-#main{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--void)}
+#main{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--void)}
 #stagewrap{flex:1;display:flex;align-items:center;justify-content:center;padding:26px 30px;
   min-height:0;position:relative}
 /* cetvel işaretleri */
@@ -1595,7 +1595,29 @@ function applyRes(){
   const max=1280, s=Math.min(1,max/w);
   stage.width=Math.round(w*s); stage.height=Math.round(h*s);
   S.baseKey=""; S.stillCache.clear();
+  fitStage();
 }
+/* Tuvalin ekrandaki olcusu.
+   #stage{max-height:100%} ise etkisizdi: yuzde, ust kutunun YUKSEKLIGINE gore
+   cozulur, #cage'in yuksekligi ise auto idi. Yani tuvalin yuksekligi hicbir
+   zaman sinirlanmiyordu; pencere alcaldikca sahne alt bandin uzerine tasiyordu.
+   Olcu artik burada hesaplanip #cage'e piksel olarak yaziliyor. */
+function fitStage(){
+  const wrap=$("#stagewrap"), cage=$("#cage");
+  if(!wrap||!cage||!stage.width||!stage.height) return;
+  const cs=getComputedStyle(wrap);
+  const aw=wrap.clientWidth -parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight);
+  const ah=wrap.clientHeight-parseFloat(cs.paddingTop) -parseFloat(cs.paddingBottom);
+  if(!(aw>4&&ah>4)) return;
+  const ar=stage.width/stage.height;
+  let w=aw, h=w/ar;
+  if(h>ah){ h=ah; w=h*ar; }
+  cage.style.width =Math.floor(w)+"px";
+  cage.style.height=Math.floor(h)+"px";
+  stage.style.width="100%"; stage.style.height="100%";
+}
+addEventListener("resize",()=>{ clearTimeout(fitStage._t);
+  fitStage._t=setTimeout(fitStage,60); });
 
 /* --- panel bloklarini ac/kapa --- */
 const GRP_SHUT="nyta.grp.shut";
@@ -1686,7 +1708,7 @@ $("#tl").addEventListener("click",e=>{
   S.t=dur*(e.clientX-r.left)/r.width; draw();
 });
 
-buildAeList(); buildTL(); applyRes(); grpInit();
+buildAeList(); buildTL(); applyRes(); grpInit(); fitStage();
 window.NYTA={S,FX,renderFrame,timeline,detect,blobDetect,outSize,AESTHETICS,buildBase,boxToCanvas,loadImageElement(img){
   S.img=img;S.baseKey="";S.stillCache.clear();S.t=0;S.dets=[];
   $("#empty").style.display="none";
