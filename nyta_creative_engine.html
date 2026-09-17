@@ -167,7 +167,8 @@ button.pri:hover:not(:disabled){background:var(--pri);color:#000;box-shadow:0 0 
   background:repeating-linear-gradient(to bottom,var(--gho) 0 1px,transparent 1px 22px)}
 #stagewrap::after{right:0;top:0;bottom:0;width:13px;
   background:repeating-linear-gradient(to bottom,var(--gho) 0 1px,transparent 1px 22px)}
-#cage{position:relative;max-width:100%;max-height:100%;display:flex;z-index:920}
+#cage{position:relative;max-width:100%;max-height:100%;display:flex;
+  align-items:center;justify-content:center;z-index:920}
 /* sahne CRT katmanının üstünde durur: önizleme = export, doku sadece kabukta */
 #cage>i{position:absolute;width:15px;height:15px;border:1px solid var(--pri);opacity:.85}
 #cage>i:nth-child(1){top:-6px;left:-6px;border-right:0;border-bottom:0}
@@ -282,6 +283,11 @@ button.pri:hover:not(:disabled){background:var(--pri);color:#000;box-shadow:0 0 
         <div class="row"><label>warp amount</label><input type="range" id="p_fishamt" min="0" max="1" step="0.02" value="0.40"><output></output></div>
         <div class="row"><label>corner curl</label><input type="range" id="p_fishcnr" min="0" max="3" step="0.05" value="1.60"><output></output></div>
         <div class="row"><label>edge fringing</label><input type="range" id="p_fishca" min="0" max="1" step="0.02" value="0.35"><output></output></div>
+        <div class="row"><label>lens radius</label><input type="range" id="p_lensr" min="0.30" max="1" step="0.02" value="0.62"><output></output></div>
+        <div class="row"><label>glass rim</label><input type="range" id="p_lensrim" min="0" max="1" step="0.02" value="0.55"><output></output></div>
+        <div class="row"><label>rim width</label><input type="range" id="p_lensw" min="0" max="1" step="0.02" value="0.35"><output></output></div>
+        <div class="row"><label>outside desat</label><input type="range" id="p_outdesat" min="0" max="1" step="0.02" value="0.70"><output></output></div>
+        <div class="row"><label>outside grain</label><input type="range" id="p_outgrain" min="0" max="1" step="0.02" value="0.35"><output></output></div>
         <div class="row" style="margin-top:9px"><label>stipple</label><input type="checkbox" id="p_grain" checked></div>
         <div class="row"><label>stipple amount</label><input type="range" id="p_grainamt" min="0" max="1" step="0.02" value="0.46"><output></output></div>
         <div class="row"><label>stipple size</label><input type="range" id="p_grainsz" min="0" max="1" step="0.02" value="0.46"><output></output></div>
@@ -442,6 +448,7 @@ function paramSig(){
   const cb=id=>{const e=$("#"+id);return e&&e.checked?1:0;};
   return [P("falloff"),P("floor"),P("spread"),P("halo"),P("con"),P("crush"),P("fx"),P("fy"),
           cb("p_fish"),P("fishamt"),P("fishcnr"),P("fishca"),
+          P("lensr"),P("lensrim"),P("lensw"),P("outdesat"),P("outgrain"),
           cb("p_grain"),P("grainamt"),P("grainsz"),P("graincon"),
           $("#p_fit")?$("#p_fit").value:"contain",
           $("#p_seed")?$("#p_seed").value:0].join(",");
@@ -461,55 +468,114 @@ function on(id){const e=$("#"+id);return !!(e&&e.checked);}
    bolmek merkezi 2.7 kat buyutuyordu. */
 function fishK(){ return (P("fishamt")*0.75)/(1+fishC()); }
 function fishC(){ return P("fishcnr"); }
-function fishF(r,s2){ return 1 + fishK()*r*r*(1 + fishC()*s2); }
-function fishNorm(){ return fishF(1,1); }
-/* ileri harita: kaynaktaki r_src, cikista hangi r_dst'ye dusuyor (bisection) */
+/* Kose kivrimi kareye ozgudur: dairesel lenste yon bagimli buyutme merkezde
+   dort kollu yildiz artefakti birakir. Bu yuzden kivrim, lens kareyi doldurmaya
+   yaklastikca (R: 0.85 -> 1.00) yumusak biçimde geri gelir; dairede sifirdir. */
+function lensCurlW(){ const R=lensR();
+  if(R>=1) return 1; if(R<=0.85) return 0;
+  const t=(R-0.85)/0.15; return t*t*(3-2*t); }
+function fishCE(){ return fishC()*lensCurlW(); }
+function fishF(r,s2){ return 1 + fishK()*r*r*(1 + fishCE()*s2); }
+function fishNorm(){ return 1 + fishK()*(1 + fishCE()); }
+/* Lens yaricapi: yari-kosegenin orani. 1.00 = tum kare (cember yok). */
+function lensR(){ const e=$("#p_lensr"); const v=e?parseFloat(e.value):1;
+                  return (isFinite(v)&&v>0.02)?v:1; }
+/* Normalizasyon artik YON BASINA yapiliyor: f(1,s2).
+   Boylece r=R cemberi her yonde tam yerinde kalir; lensin disi bukulmeden
+   kaldigi icin sinirda dikis/atlama olusmaz. */
 function fishFwd(rSrc,s2){
-  const n=fishNorm();
-  let lo=0, hi=1.6;
+  const R=lensR();
+  if(rSrc>=R) return rSrc;
+  const n=fishNorm(), rn=rSrc/R;
+  let lo=0, hi=1;
   for(let i=0;i<26;i++){
     const m=(lo+hi)/2;
-    (m*fishF(m,s2)/n < rSrc) ? lo=m : hi=m;
+    (m*fishF(m,s2)/n < rn) ? lo=m : hi=m;
   }
-  return (lo+hi)/2;
+  return ((lo+hi)/2)*R;
+}
+/* iki dogrusal ornekleme, tek kanal */
+function bilS(S,w,fx,fy,ch,W1,H1){
+  fx=fx<0?0:fx>W1?W1:fx; fy=fy<0?0:fy>H1?H1:fy;
+  const x0=fx|0,y0=fy|0,tx=fx-x0,ty=fy-y0,
+        a=(y0*w+x0)*4+ch,b=a+4,c=a+w*4,d=c+4;
+  return (S[a]*(1-tx)+S[b]*tx)*(1-ty)+(S[c]*(1-tx)+S[d]*tx)*ty;
 }
 function warpFisheye(src,w,h){
   const dst=cv(w,h), dx=dst.getContext("2d",{willReadFrequently:true});
   const sx=src.getContext("2d",{willReadFrequently:true});
   const S=sx.getImageData(0,0,w,h).data;
   const D=dx.createImageData(w,h), Q=D.data;
-  const cx=w/2, cy=h/2, hd=Math.hypot(w,h)/2, n=fishNorm(), ca=P("fishca")*0.008;
-  const W1=w-1.001, H1=h-1.001, K=fishK(), C=fishC();
+  const cx=w/2, cy=h/2, hd=Math.hypot(w,h)/2, ca=P("fishca")*0.008;
+  const W1=w-1.001, H1=h-1.001, K=fishK(), C=fishCE(), NRM=fishNorm();
+  const R=lensR(), R2=R*R, full=(R>=0.999);
+  const rim=P("lensrim");
+  const bw=Math.max(1e-4,(0.015+0.10*P("lensw"))*R);   // ic halka genisligi
+  const obw=bw*0.60;                                    // dis parlama bandi
+  const dsat=P("outdesat"), ognz=P("outgrain");
+  const seedEl=$("#p_seed"), seed=(parseInt(seedEl?seedEl.value:0,10)||0)|0;
+  const HSH=(a,b,c2)=>{
+    let n=(a*374761393 + b*668265263 + c2*1274126177 + seed*2654435761)|0;
+    n=(n^(n>>>13))*1274126177|0;
+    return ((n^(n>>>16))>>>0)/4294967296;
+  };
   for(let y=0,i=0;y<h;y++){
     const ny=(y-cy)/hd, ny2=ny*ny;
     for(let x=0;x<w;x++,i+=4){
       const nx=(x-cx)/hd;
       const r2=nx*nx+ny2;
-      if(r2<1e-12){ const j=(y*w+x)*4; Q[i]=S[j];Q[i+1]=S[j+1];Q[i+2]=S[j+2];Q[i+3]=255; continue; }
-      const r=Math.sqrt(r2);
-      const t=2*nx*ny/r2, diag=t*t;                    // sin²(2θ)
-      const k=(1+K*r2*(1+C*diag))/n;
-      const ux=nx/r, uy=ny/r, base=r*k*hd;
-      const off=ca*r2*base;                            // kanal kaymasi (piksel)
-      if(off<0.35){                                    // ihmal edilebilir: tek ornek
-        let fx=cx+ux*base, fy=cy+uy*base;
-        fx=fx<0?0:fx>W1?W1:fx; fy=fy<0?0:fy>H1?H1:fy;
-        const x0=fx|0,y0=fy|0,tx=fx-x0,ty=fy-y0,
-              a=(y0*w+x0)*4, b2=a+4, c2=a+w*4, d2=c2+4,
-              w00=(1-tx)*(1-ty), w10=tx*(1-ty), w01=(1-tx)*ty, w11=tx*ty;
-        Q[i]  =S[a]*w00+S[b2]*w10+S[c2]*w01+S[d2]*w11;
-        Q[i+1]=S[a+1]*w00+S[b2+1]*w10+S[c2+1]*w01+S[d2+1]*w11;
-        Q[i+2]=S[a+2]*w00+S[b2+2]*w10+S[c2+2]*w01+S[d2+2]*w11;
-        Q[i+3]=255; continue;
+      let R0,G0,B0;
+      if(r2<1e-12){ const j=(y*w+x)*4; R0=S[j]; G0=S[j+1]; B0=S[j+2]; }
+      else{
+        const r=Math.sqrt(r2);
+        const t=2*nx*ny/r2, diag=t*t;              // sin^2(2theta)
+        const ux=nx/r, uy=ny/r;
+        if(full || r<R){
+          /* ── LENS ICI: bukum ── */
+          const rn2=r2/R2;
+          const k=(1+K*rn2*(1+C*diag))/NRM;
+          const base=r*k*hd;
+          const off=ca*rn2*base;
+          if(off<0.35){
+            R0=bilS(S,w,cx+ux*base,cy+uy*base,0,W1,H1);
+            G0=bilS(S,w,cx+ux*base,cy+uy*base,1,W1,H1);
+            B0=bilS(S,w,cx+ux*base,cy+uy*base,2,W1,H1);
+          }else{
+            const gp=base+off, gm=base-off;
+            R0=bilS(S,w,cx+ux*gp,cy+uy*gp,0,W1,H1);
+            G0=bilS(S,w,cx+ux*base,cy+uy*base,1,W1,H1);
+            B0=bilS(S,w,cx+ux*gm,cy+uy*gm,2,W1,H1);
+          }
+        }else{
+          /* ── LENS DISI: bukum yok, disari dogru hafif kirilma ── */
+          let g=r*hd;
+          if(rim>0.001 && r<R+obw){
+            const tt=(r-R)/obw;
+            g += rim*obw*hd*0.55*(1-tt)*(1-tt);
+          }
+          R0=bilS(S,w,cx+ux*g,cy+uy*g,0,W1,H1);
+          G0=bilS(S,w,cx+ux*g,cy+uy*g,1,W1,H1);
+          B0=bilS(S,w,cx+ux*g,cy+uy*g,2,W1,H1);
+          if(dsat>0.001){
+            const l=0.2126*R0+0.7152*G0+0.0722*B0;
+            R0+=(l-R0)*dsat; G0+=(l-G0)*dsat; B0+=(l-B0)*dsat;
+          }
+          if(ognz>0.001){
+            const nz=(HSH(x,y,11)*0.62+HSH(x>>1,y>>1,12)*0.38-0.5)*ognz*78;
+            R0+=nz; G0+=nz; B0+=nz;
+          }
+        }
+        /* ── CAM KENARI: icte koyu halka, dista ince parlama ── */
+        if(rim>0.001){
+          let m=1;
+          if(r<=R && r>R-bw){ const tt=(r-(R-bw))/bw; m=1-rim*0.85*tt*tt; }
+          else if(r>R && r<R+obw){ const tt=(r-R)/obw; m=1+rim*0.45*(1-tt)*(1-tt); }
+          if(m!==1){ R0*=m; G0*=m; B0*=m; }
+        }
       }
-      for(let ch=0;ch<3;ch++){
-        const g=base+(ch===0?off:ch===2?-off:0);
-        let fx=cx+ux*g, fy=cy+uy*g;
-        fx=fx<0?0:fx>W1?W1:fx; fy=fy<0?0:fy>H1?H1:fy;
-        const x0=fx|0,y0=fy|0,tx=fx-x0,ty=fy-y0,
-              a=(y0*w+x0)*4+ch, b2=a+4, c2=a+w*4, d2=c2+4;
-        Q[i+ch]=(S[a]*(1-tx)+S[b2]*tx)*(1-ty)+(S[c2]*(1-tx)+S[d2]*tx)*ty;
-      }
+      Q[i]  =R0<0?0:R0>255?255:R0;
+      Q[i+1]=G0<0?0:G0>255?255:G0;
+      Q[i+2]=B0<0?0:B0>255?255:B0;
       Q[i+3]=255;
     }
   }
@@ -1663,7 +1729,9 @@ buildAeList(); buildTL(); readouts();
    nesneyi localStorage'a koyar.
    ═══════════════════════════════════════════════════════════════════════ */
 const PIDS=["p_falloff","p_floor","p_spread","p_halo","p_con","p_crush","p_fx","p_fy",
-  "p_fish","p_fishamt","p_fishcnr","p_fishca","p_grain","p_grainamt","p_grainsz","p_graincon",
+  "p_fish","p_fishamt","p_fishcnr","p_fishca",
+  "p_lensr","p_lensrim","p_lensw","p_outdesat","p_outgrain",
+  "p_grain","p_grainamt","p_grainsz","p_graincon",
   "p_boxes","p_det","p_minsz","p_labels","p_stamp","p_id",
   "p_seg","p_xf","p_fps","p_seed","p_title","p_res","p_fit","p_scale","p_speed","p_crt"];
 
