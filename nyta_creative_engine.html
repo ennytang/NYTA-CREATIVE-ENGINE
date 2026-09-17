@@ -447,9 +447,12 @@ function fmt(s){const m=Math.floor(s/60),x=Math.floor(s%60);return String(m).pad
    kanallari 0x7f civarindaydi, neon'u neon yapan sey ise o kanalin sifira
    yaklasmasi. Her renk kendi tonunda tutuldu, tam doygunluga cekildi ve
    aciklik, algilanan parlaklik 0.42'nin altina dusmeyecek sekilde secildi;
-   yoksa mor ve mavi HUD karanlik karede okunmaz oluyordu. */
+   yoksa mor ve mavi HUD karanlik karede okunmaz oluyordu.
+   EFFORTLESS COOL bunun bilincli istisnasi: gece paparazzi flasinin soguk
+   isigi icin elektrik mavisi degil, beyaza calan bir buz mavisi isteniyor —
+   doygunlugu dusuk ama parlakligi cok yuksek (0.87). */
 const AESTHETICS=[
- {id:"cool",   name:"EFFORTLESS COOL",    sub:"night paparazzi / high-low",  col:"#1a75ff", amt:0.85, on:true},
+ {id:"cool",   name:"EFFORTLESS COOL",    sub:"night paparazzi / high-low",  col:"#b4e5ff", amt:0.85, on:true},
  {id:"noir",   name:"TECH NOIR",          sub:"green phosphor night vision",     col:"#00ff5d", amt:0.90, on:true},
  {id:"horror", name:"ANALOG HORROR",      sub:"VHS breakup / tape warp",      col:"#a64dff", amt:0.85, on:true},
  {id:"mil",    name:"MILITARY REALISM",   sub:"FLIR thermal / targeting HUD",  col:"#ffb800", amt:0.90, on:true},
