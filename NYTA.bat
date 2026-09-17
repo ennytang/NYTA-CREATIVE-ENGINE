@@ -13,7 +13,11 @@ if not exist "%CHROME%" set "CHROME=%LOCALAPPDATA%\Google\Chrome\Application\chr
 if not exist "%CHROME%" goto nochrome
 if not exist "%HTML%" goto nohtml
 if not exist "%~dp0OUTPUT" mkdir "%~dp0OUTPUT"
-start "" "%CHROME%" --app="file:///%HTML:\=/%" --user-data-dir="%PROFILE%" --window-size=1680,1000 --window-position=60,40
+rem  Surum damgasi: Chrome file:// sayfalarini onbellekten verebiliyor ve
+rem  guncellenen dosya eski haliyle aciliyordu. URL'e her acilista degisen bir
+rem  sorgu eklenince tarayici sayfayi yeni bir adres sayip diskten okuyor.
+set "V=%RANDOM%%RANDOM%"
+start "" "%CHROME%" --app="file:///%HTML:\=/%?v=%V%" --user-data-dir="%PROFILE%" --window-size=1680,1000 --window-position=60,40
 exit /b 0
 
 :nochrome

@@ -346,6 +346,7 @@ button.pri:hover:not(:disabled){background:var(--pri);color:#000;box-shadow:0 0 
             <option value="blob">LUM-BLOB</option>
           </select></div>
         <div class="row"><label>min. size %</label><input type="range" id="p_minsz" min="1" max="30" step="0.5" value="5"><output></output></div>
+        <div class="row"><label>part size</label><input type="range" id="p_partsz" min="0.30" max="1" step="0.02" value="0.56"><output></output></div>
         <div class="row"><label>box labels</label><input type="checkbox" id="p_labels"></div>
         <div class="row"><label>fx text</label><input type="checkbox" id="p_fxtext"></div>
         <div class="row"><label>ID badge</label><input type="checkbox" id="p_stamp" checked></div>
@@ -409,6 +410,7 @@ button.pri:hover:not(:disabled){background:var(--pri);color:#000;box-shadow:0 0 
         <div class="read"><b>DURATION</b><span id="r_dur">—</span></div>
         <div class="read"><b>TRACKS</b><span id="r_trk">—</span></div>
         <div class="read"><b>DETECTOR</b><span id="r_det">—</span></div>
+        <div class="read"><b>BUILD</b><span id="r_build">—</span></div>
         <div class="row" style="margin-top:8px"><label>CRT texture</label><input type="checkbox" id="p_crt" checked></div>
       </div>
     </aside>
@@ -1069,8 +1071,14 @@ mil:{
       const lh=15*S1;
       let tw=0; for(const t of L){const m=dst.measureText(t).width; if(m>tw)tw=m;}
       const th=lh*3+12*S1;
-      // blok sol ustte kalir ama lens cemberinin disina tasmaz
-      const [tx,ty]=fitInLens(w*0.06, h*0.085-11*S1, tw, th, w, h);
+      /* Blok SOL ALT kosede, her iki eksende %15 iceride.
+         Lens etkinken "goruntu" kadrajin tamami degil cemberin kendisidir;
+         o yuzden %15, cemberin o yukseklikteki KIRISINDEN olculur. */
+      let bx0,by0;
+      const B=lensBand(0.85,w,h);
+      if(B){ bx0=B[1]+(B[2]-B[1])*0.15; by0=B[0]-th; }
+      else { bx0=w*0.15; by0=h*0.85-th; }
+      const [tx,ty]=fitInLens(bx0,by0,tw,th,w,h);
       for(let i=0;i<L.length;i++) dst.fillText(L[i],tx,ty+11*S1+i*lh);
     }
     // tarama çizgisi
@@ -1356,21 +1364,112 @@ function clampToLens(R,w,h){
   const a=pass(true), b=pass(false);
   return (a.w*a.h >= b.w*b.h) ? a : b;
 }
+/* ───────────────────────────────────────────────────────────────────────────
+   KONTRAST HARITASI
+   Kaynak 192 piksel genisligine indirilir, her hucre icin 3x3 komsuluktaki
+   parlaklik araligi (yerel kontrast) hesaplanir. Uzerine bir integral
+   goruntu kurulur; boylece herhangi bir dikdortgenin kontrast toplami dort
+   okuma ile alinir ve pencere taramasi ucuzlar. Goruntu basina bir kez.
+   ───────────────────────────────────────────────────────────────────────── */
+function contrastMap(){
+  if(S.cmap && S.cmapKey===S.img) return S.cmap;
+  const W=192, H=Math.max(1,Math.round(192*S.img.height/S.img.width));
+  const c=cv(W,H), x=c.getContext("2d",{willReadFrequently:true});
+  x.drawImage(S.img,0,0,W,H);
+  const d=x.getImageData(0,0,W,H).data;
+  const L=new Float32Array(W*H);
+  for(let i=0,j=0;i<d.length;i+=4,j++)
+    L[j]=(0.2126*d[i]+0.7152*d[i+1]+0.0722*d[i+2])/255;
+  const C=new Float32Array(W*H);
+  for(let y=0;y<H;y++)for(let x2=0;x2<W;x2++){
+    let mn=1,mx=0;
+    for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+      const yy=y+dy,xx=x2+dx; if(yy<0||xx<0||yy>=H||xx>=W) continue;
+      const v=L[yy*W+xx]; if(v<mn)mn=v; if(v>mx)mx=v;
+    }
+    C[y*W+x2]=mx-mn;
+  }
+  const I=new Float64Array((W+1)*(H+1));
+  for(let y=0;y<H;y++){ let row=0;
+    for(let x2=0;x2<W;x2++){ row+=C[y*W+x2];
+      I[(y+1)*(W+1)+x2+1]=I[y*(W+1)+x2+1]+row; } }
+  S.cmapKey=S.img;
+  return (S.cmap={W,H,C,I});
+}
+function winSum(M,x0,y0,x1,y1){                 // [x0,x1) x [y0,y1)
+  const W1=M.W+1, I=M.I;
+  return I[y1*W1+x1]-I[y0*W1+x1]-I[y1*W1+x0]+I[y0*W1+x0];
+}
+/* Verilen bolgede bw x bh penceresini kaydirip ortalama kontrasti en yuksek
+   konumu dondurur. */
+function bestWindow(M,gx0,gy0,gx1,gy1,bw,bh){
+  bw=Math.max(3,Math.min(bw,gx1-gx0)); bh=Math.max(3,Math.min(bh,gy1-gy0));
+  const step=Math.max(1,Math.round(Math.min(bw,bh)/6));
+  let best=-1,bx=gx0,by=gy0;
+  for(let y=gy0;y+bh<=gy1;y+=step)for(let x=gx0;x+bw<=gx1;x+=step){
+    const sm=winSum(M,x,y,x+bw,y+bh);
+    if(sm>best){best=sm;bx=x;by=y;}
+  }
+  if(best<0) return {x:gx0,y:gy0,w:bw,h:bh,score:0};
+  return {x:bx,y:by,w:bw,h:bh,score:best/(bw*bh)};
+}
+/* PARCA KUTUSU — nesnenin tamamini degil, icindeki en kontrastli parcayi
+   cerceveler. "part size" 1.00 iken tespitin kendisi doner. */
+function partOf(b){
+  const f=P("partsz");
+  if(!(f>0) || f>=0.99 || !S.img) return b;
+  const M=contrastMap();
+  const gx0=clamp(Math.round(b.x*M.W),0,M.W-1),      gy0=clamp(Math.round(b.y*M.H),0,M.H-1);
+  const gx1=clamp(Math.round((b.x+b.w)*M.W),1,M.W),  gy1=clamp(Math.round((b.y+b.h)*M.H),1,M.H);
+  if(gx1-gx0<6||gy1-gy0<6) return b;
+  const win=bestWindow(M,gx0,gy0,gx1,gy1,
+                       Math.round((gx1-gx0)*f),Math.round((gy1-gy0)*f));
+  return Object.assign({},b,{x:win.x/M.W,y:win.y/M.H,w:win.w/M.W,h:win.h/M.H,part:true});
+}
+/* YEDEK KUTU — hicbir nesne bulunamadiginda. Kontrastin esigi astigi en
+   guclu bolgeye, goruntunun en fazla %30'unu kaplayan bir kutu atar; sonra
+   kutuyu, kontrast yogunlugu artmaya devam ettigi surece daraltir. Hicbir
+   yer esigi gecmiyorsa (duz, kontrastsiz kare) kutu atmaz. */
+const FALLBACK_MAXA=0.30;
+function salientBox(){
+  if(!S.img) return null;
+  const M=contrastMap();
+  const k=Math.sqrt(FALLBACK_MAXA);
+  let win=bestWindow(M,0,0,M.W,M.H,Math.round(M.W*k),Math.round(M.H*k));
+  const mean=winSum(M,0,0,M.W,M.H)/(M.W*M.H);
+  const TH=Math.max(0.020, mean*1.25);          // esik: ortalamanin belirgin ustu
+  if(win.score<TH) return null;
+  for(let i=0;i<5;i++){
+    const nw=Math.round(win.w*0.82), nh=Math.round(win.h*0.82);
+    if(nw<10||nh<10) break;
+    const w2=bestWindow(M,win.x,win.y,win.x+win.w,win.y+win.h,nw,nh);
+    if(w2.score < win.score*1.04) break;         // daha yogun degilse durdur
+    win=w2;
+  }
+  return {x:win.x/M.W,y:win.y/M.H,w:win.w/M.W,h:win.h/M.H,
+          label:"CONTRAST", score:clamp(win.score*3,0.3,0.99),
+          area:(win.w*win.h)/(M.W*M.H), fallback:true};
+}
+/* Cizilecek kutular. Sonuc goruntu+parametre imzasina gore onbelleklenir;
+   oynatma sirasinda her karede yeniden taranmasin. */
 function visibleDets(){
-  const minA=P("minsz")/100;
-  return S.dets.filter(b=>b.w*b.h>=minA);
+  const minA=P("minsz")/100, f=P("partsz");
+  const sig=(S.img?S.img.src.length+"x"+S.img.width:"0")+"|"+minA+"|"+f+"|"+S.dets.length;
+  if(S.vdSig===sig) return S.vdCache;
+  let v=S.dets.filter(b=>b.w*b.h>=minA).map(partOf);
+  if(!v.length){ const sb=salientBox(); if(sb) v=[sb]; }
+  S.vdSig=sig; S.vdCache=v;
+  return v;
 }
 function drawBoxes(dst,w,h,S1,col){
-  if(!$("#p_boxes").checked||!S.dets.length) return;
-  const minA=P("minsz")/100;
+  if(!$("#p_boxes").checked) return;
   const showL=$("#p_labels").checked;
   dst.save();
   dst.lineWidth=Math.max(1,1.6*S1);
   dst.font="700 "+(13*S1|0)+"px "+CF;
   dst.shadowColor=col; dst.shadowBlur=7*S1;   // neon halesi
   let n=0;
-  for(const b of S.dets){
-    if(b.w*b.h<minA) continue;
+  for(const b of visibleDets()){
     const R=boxToCanvas(b,w,h);
     if(R.w<4*S1||R.h<4*S1) continue;          // lens disinda kaldi: cizme
     n++;
@@ -1520,7 +1619,7 @@ function renderFrame(dst,w,h,t){
   const mix=mixAt(t);
   if(!mix.length||!S.img) return;
 
-  const nDet=S.dets.filter(b=>b.w*b.h>=P("minsz")/100).length;
+  const nDet=visibleDets().length;
   let top=mix[0], layer=scratch("layer",w,h), lx=layer.getContext("2d",{willReadFrequently:true});
 
   for(const m of mix){
@@ -1855,7 +1954,7 @@ function lensUI(){
 ["p_res","p_fit"].forEach(id=>{const e=$("#"+id); if(e) e.onchange=()=>{
   S.baseKey="";S.stillCache.clear();applyRes();draw();};});
 {const e=$("#p_speed"); if(e) e.onchange=draw;}
-["p_boxes","p_labels","p_stamp","p_title","p_minsz","p_id","p_fps","p_fxtext"].forEach(id=>{
+["p_boxes","p_labels","p_stamp","p_title","p_minsz","p_partsz","p_id","p_fps","p_fxtext"].forEach(id=>{
   const e=$("#"+id); if(e) e.addEventListener("input",draw), e.addEventListener("change",draw);
 });
 /* base'i yeniden hesaplatmasi gerekenler: mercek, kumlama ve seed (kum deseni) */
@@ -1878,7 +1977,8 @@ $("#tl").addEventListener("click",e=>{
 });
 
 buildAeList(); buildTL(); applyRes(); grpInit(); fitStage(); lensUI();
-window.NYTA={S,FX,renderFrame,timeline,detect,blobDetect,outSize,AESTHETICS,buildBase,boxToCanvas,loadImageElement(img){
+window.NYTA={S,FX,renderFrame,timeline,detect,blobDetect,outSize,AESTHETICS,buildBase,boxToCanvas,
+  visibleDets,contrastMap,salientBox,partOf,loadImageElement(img){
   S.img=img;S.baseKey="";S.stillCache.clear();S.t=0;S.dets=[];
   $("#empty").style.display="none";
   ["#b_vid","#b_stills","#b_shot","#b_play","#b_stop"].forEach(q=>$(q).disabled=false);
@@ -2014,7 +2114,7 @@ const PIDS=["p_falloff","p_floor","p_spread","p_halo","p_con","p_crush","p_fx","
   "p_fish","p_fishamt","p_fishcnr","p_fishca",
   "p_lensr","p_lensmode","p_lensfill","p_lensrim","p_lensw","p_outdesat","p_outgrain",
   "p_grain","p_grainamt","p_grainsz","p_graincon",
-  "p_boxes","p_det","p_minsz","p_labels","p_stamp","p_id","p_fxtext",
+  "p_boxes","p_det","p_minsz","p_partsz","p_labels","p_stamp","p_id","p_fxtext",
   "p_seg","p_xf","p_fps","p_seed","p_title","p_res","p_fit","p_scale","p_speed","p_crt"];
 
 function snapState(){
@@ -2219,6 +2319,9 @@ $("#p_impf").onchange=ev=>{
 };
 
 paintPresets(); paintUndo();
+/* Yuklenen dosyanin tarihi: tarayici eski bir kopyayi onbellekten verirse
+   burasi guncel dosyanin tarihini GOSTERMEZ, boylece fark hemen anlasilir. */
+{const e=$("#r_build"); if(e) e.textContent=document.lastModified;}
 restoreSession();
 if(!lsOK) flash("warning: settings and presets cannot persist here",2);
 console.log("[NYTA] MFD shell ready — IR night mode / undo + presets");
