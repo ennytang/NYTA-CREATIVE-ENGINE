@@ -433,13 +433,19 @@ function cv(w,h){const c=document.createElement("canvas");c.width=w;c.height=h;r
 function fmt(s){const m=Math.floor(s/60),x=Math.floor(s%60);return String(m).padStart(2,"0")+":"+String(x).padStart(2,"0");}
 
 /* ---------- estetik tanımları ---------- */
+/* HUD paleti — cyber neon.
+   Onceki degerler pastel idi: doygunluklari yuksek gorunse de en dusuk RGB
+   kanallari 0x7f civarindaydi, neon'u neon yapan sey ise o kanalin sifira
+   yaklasmasi. Her renk kendi tonunda tutuldu, tam doygunluga cekildi ve
+   aciklik, algilanan parlaklik 0.42'nin altina dusmeyecek sekilde secildi;
+   yoksa mor ve mavi HUD karanlik karede okunmaz oluyordu. */
 const AESTHETICS=[
- {id:"cool",   name:"EFFORTLESS COOL",    sub:"night paparazzi / high-low",  col:"#7fb2ff", amt:0.85, on:true},
- {id:"noir",   name:"TECH NOIR",          sub:"green phosphor night vision",     col:"#4ade80", amt:0.90, on:true},
- {id:"horror", name:"ANALOG HORROR",      sub:"VHS breakup / tape warp",      col:"#c084fc", amt:0.85, on:true},
- {id:"mil",    name:"MILITARY REALISM",   sub:"FLIR thermal / targeting HUD",  col:"#fbbf24", amt:0.90, on:true},
- {id:"glitch", name:"GLITCH ART",         sub:"slice + channel split",         col:"#f472b6", amt:0.80, on:true},
- {id:"brutal", name:"BRUTALISM DIGITAL",  sub:"1-bit dither / hard grid",     col:"#e5e5e5", amt:0.85, on:true},
+ {id:"cool",   name:"EFFORTLESS COOL",    sub:"night paparazzi / high-low",  col:"#1a75ff", amt:0.85, on:true},
+ {id:"noir",   name:"TECH NOIR",          sub:"green phosphor night vision",     col:"#00ff5d", amt:0.90, on:true},
+ {id:"horror", name:"ANALOG HORROR",      sub:"VHS breakup / tape warp",      col:"#a64dff", amt:0.85, on:true},
+ {id:"mil",    name:"MILITARY REALISM",   sub:"FLIR thermal / targeting HUD",  col:"#ffb800", amt:0.90, on:true},
+ {id:"glitch", name:"GLITCH ART",         sub:"slice + channel split",         col:"#ff3da3", amt:0.80, on:true},
+ {id:"brutal", name:"BRUTALISM DIGITAL",  sub:"1-bit dither / hard grid",     col:"#dffbff", amt:0.85, on:true},
 ];
 
 /* ---------- durum ---------- */
@@ -1229,6 +1235,7 @@ function drawBoxes(dst,w,h,S1,col){
   dst.save();
   dst.lineWidth=Math.max(1,1.6*S1);
   dst.font="700 "+(13*S1|0)+"px "+CF;
+  dst.shadowColor=col; dst.shadowBlur=7*S1;   // neon halesi
   let n=0;
   for(const b of S.dets){
     if(b.w*b.h<minA) continue;
@@ -1255,7 +1262,9 @@ function drawBoxes(dst,w,h,S1,col){
       const up = lensHasPoint(x,y-18*S1,w,h) && lensHasPoint(x+tw,y-18*S1,w,h);
       const ly = up ? y-18*S1 : y+1;
       dst.fillStyle=col;dst.fillRect(x,ly,tw,17*S1);
+      dst.shadowBlur=0;                        // etiket yazisi net kalsin
       dst.fillStyle="#000";dst.fillText(tag,x+4*S1,ly+13*S1);
+      dst.shadowBlur=7*S1;
     }
   }
   dst.restore();
@@ -1312,9 +1321,11 @@ function drawStamp(dst,w,h,S1,col,label){
   dst.fillRect(bx,by,bw,bh);
   dst.globalAlpha=1;
   dst.strokeStyle=col;dst.lineWidth=Math.max(1.5,2*S1);
+  dst.shadowColor=col; dst.shadowBlur=8*S1;    // neon halesi
   dst.strokeRect(bx,by,bw,bh);
   dst.fillStyle=col;
   dst.fillText(txt,bx+pad,by+bh-9*S1);
+  dst.shadowBlur=0;
   dst.restore();
 }
 
