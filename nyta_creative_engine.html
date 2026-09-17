@@ -120,6 +120,8 @@ body.rec #frame{border-color:var(--pri);box-shadow:inset 0 0 0 1px var(--pri),in
 
 /* ── kontroller ──────────────────────────────────────────────────────────── */
 .row{display:flex;align-items:center;gap:7px;margin:4px 0}
+.row.na{opacity:.32}
+.row.na input{pointer-events:none}
 .row label{flex:1;color:var(--tx2);font-size:12px;letter-spacing:.03em;line-height:1.3}
 .row output{width:50px;text-align:right;color:var(--hot);font-size:12px;font-variant-numeric:tabular-nums}
 input[type=range]{flex:1.35;-webkit-appearance:none;appearance:none;height:14px;background:transparent;min-width:0;cursor:pointer}
@@ -287,10 +289,16 @@ button.pri:hover:not(:disabled){background:var(--pri);color:#000;box-shadow:0 0 
       <div class="grp">
         <h4><em>LENS &amp; GRAIN</em><code>LNS-02</code></h4>
         <div class="row"><label>fisheye</label><input type="checkbox" id="p_fish" checked></div>
+        <div class="row"><label>lens mode</label>
+          <select id="p_lensmode" style="flex:1.35">
+            <option value="squeeze">SQUEEZE — fit in circle</option>
+            <option value="window">WINDOW — lens over frame</option>
+          </select></div>
         <div class="row"><label>warp amount</label><input type="range" id="p_fishamt" min="0" max="1" step="0.02" value="0.40"><output></output></div>
         <div class="row"><label>corner curl</label><input type="range" id="p_fishcnr" min="0" max="3" step="0.05" value="1.60"><output></output></div>
         <div class="row"><label>edge fringing</label><input type="range" id="p_fishca" min="0" max="1" step="0.02" value="0.35"><output></output></div>
         <div class="row"><label>lens radius</label><input type="range" id="p_lensr" min="0.30" max="1" step="0.02" value="0.62"><output></output></div>
+        <div class="row"><label>fill circle</label><input type="range" id="p_lensfill" min="0" max="1" step="0.02" value="1.00"><output></output></div>
         <div class="row"><label>glass rim</label><input type="range" id="p_lensrim" min="0" max="1" step="0.02" value="0.55"><output></output></div>
         <div class="row"><label>rim width</label><input type="range" id="p_lensw" min="0" max="1" step="0.02" value="0.35"><output></output></div>
         <div class="row"><label>outside desat</label><input type="range" id="p_outdesat" min="0" max="1" step="0.02" value="0.70"><output></output></div>
@@ -462,7 +470,8 @@ function paramSig(){
   const cb=id=>{const e=$("#"+id);return e&&e.checked?1:0;};
   return [P("falloff"),P("floor"),P("spread"),P("halo"),P("con"),P("crush"),P("fx"),P("fy"),
           cb("p_fish"),P("fishamt"),P("fishcnr"),P("fishca"),
-          P("lensr"),P("lensrim"),P("lensw"),P("outdesat"),P("outgrain"),
+          P("lensr"),P("lensfill"),P("lensrim"),P("lensw"),P("outdesat"),P("outgrain"),
+          $("#p_lensmode")?$("#p_lensmode").value:"squeeze",
           cb("p_grain"),P("grainamt"),P("grainsz"),P("graincon"),
           $("#p_fit")?$("#p_fit").value:"contain",
           $("#p_seed")?$("#p_seed").value:0].join(",");
@@ -480,15 +489,41 @@ function on(id){const e=$("#"+id);return !!(e&&e.checked);}
    K bundan turetildigi icin "kose kivrimi"ni artirmak kadrajdan kirpmaz,
    yalnizca bukumu kosegenlere kaydirir. Onceki surumde kose degerine
    bolmek merkezi 2.7 kat buyutuyordu. */
-function fishK(){ return (P("fishamt")*0.75)/(1+fishC()); }
+function fishK(){ return (P("fishamt")*0.75)/(1+fishCE()); }
 function fishC(){ return P("fishcnr"); }
+/* SQUEEZE: kadrajin TAMAMI cemberin icine sikistirilir, disarida goruntu
+   kalmaz. WINDOW: cember kadraja acilan bir penceredir, disi bukulmeden
+   durur (onceki davranis). */
+function lensMode(){ const e=$("#p_lensmode"); return e?e.value:"squeeze"; }
+function isSqueeze(){ return lensMode()==="squeeze" && lensR()<0.999; }
+/* SQUEEZE'in kaynakta ne kadarini kapsayacagi — yari-kosegen biriminde,
+   YONDEN BAGIMSIZ.
+   Ilk denemede erisim yone gore degisiyordu (kosegende 1, eksenlerde 0.71):
+   cemberi tam dolduruyor ve hicbir sey kaybettirmiyordu, ama buyutme yonden
+   yone 1.41 kat degistigi ve min() kosegenlerde turevi kirdigi icin merkezde
+   dort kollu bir girdap birakiyordu. Izotropik erisim bu bozulmayi tamamen
+   ortadan kaldirir; karsiliginda tek bir tercih kalir:
+     fill=0 -> erisim = yari-kosegen : kadrajin tamami korunur, cemberin
+               kenarinda (eksen yonlerinde) bos kamalar olusur
+     fill=1 -> erisim = yari-kisa-kenar : cember tumuyle dolar, kadrajin
+               koseleri kirpilir
+   Arasi dogrusal gecis. */
+function lensReach(w,h){
+  const hd=Math.hypot(w,h)/2;
+  const ins=Math.min(w,h)/2/hd;            // ic teget daire
+  const e=$("#p_lensfill"); let f=e?parseFloat(e.value):1;
+  if(!isFinite(f)) f=1;
+  return 1*(1-f) + ins*f;
+}
 /* Kose kivrimi kareye ozgudur: dairesel lenste yon bagimli buyutme merkezde
    dort kollu yildiz artefakti birakir. Bu yuzden kivrim, lens kareyi doldurmaya
    yaklastikca (R: 0.85 -> 1.00) yumusak biçimde geri gelir; dairede sifirdir. */
 function lensCurlW(){ const R=lensR();
   if(R>=1) return 1; if(R<=0.85) return 0;
   const t=(R-0.85)/0.15; return t*t*(3-2*t); }
-function fishCE(){ return fishC()*lensCurlW(); }
+/* SQUEEZE'de kivrim kapali: cemberin kenarinin her yonde kadraj kenarina
+   tam oturmasi icin olcegin yondan bagimsiz olmasi gerekiyor. */
+function fishCE(){ return isSqueeze() ? 0 : fishC()*lensCurlW(); }
 function fishF(r,s2){ return 1 + fishK()*r*r*(1 + fishCE()*s2); }
 function fishNorm(){ return 1 + fishK()*(1 + fishCE()); }
 /* Lens yaricapi: yari-kosegenin orani. 1.00 = tum kare (cember yok). */
@@ -497,14 +532,20 @@ function lensR(){ const e=$("#p_lensr"); const v=e?parseFloat(e.value):1;
 /* Normalizasyon artik YON BASINA yapiliyor: f(1,s2).
    Boylece r=R cemberi her yonde tam yerinde kalir; lensin disi bukulmeden
    kaldigi icin sinirda dikis/atlama olusmaz. */
-function fishFwd(rSrc,s2){
-  const R=lensR();
-  if(rSrc>=R) return rSrc;
-  const n=fishNorm(), rn=rSrc/R;
+function fishFwd(rSrc,s2,reach){
+  const R=lensR(), n=fishNorm();
+  let t;                                     // kaynakta 0..1 oranli yaricap
+  if(isSqueeze()){
+    t=rSrc/Math.max(1e-6,(reach||1));
+    if(t>=1) return R;
+  }else{
+    if(rSrc>=R) return rSrc;
+    t=rSrc/R;
+  }
   let lo=0, hi=1;
   for(let i=0;i<26;i++){
     const m=(lo+hi)/2;
-    (m*fishF(m,s2)/n < rn) ? lo=m : hi=m;
+    (m*fishF(m,s2)/n < t) ? lo=m : hi=m;
   }
   return ((lo+hi)/2)*R;
 }
@@ -522,7 +563,8 @@ function warpFisheye(src,w,h){
   const D=dx.createImageData(w,h), Q=D.data;
   const cx=w/2, cy=h/2, hd=Math.hypot(w,h)/2, ca=P("fishca")*0.008;
   const W1=w-1.001, H1=h-1.001, K=fishK(), C=fishCE(), NRM=fishNorm();
-  const R=lensR(), R2=R*R, full=(R>=0.999);
+  const R=lensR(), R2=R*R, full=(R>=0.999), SQ=isSqueeze();
+  const REACH=lensReach(w,h);                   // SQUEEZE kapsama yaricapi
   const rim=P("lensrim");
   const bw=Math.max(1e-4,(0.015+0.10*P("lensw"))*R);   // ic halka genisligi
   const obw=bw*0.60;                                    // dis parlama bandi
@@ -545,12 +587,29 @@ function warpFisheye(src,w,h){
         const t=2*nx*ny/r2, diag=t*t;              // sin^2(2theta)
         const ux=nx/r, uy=ny/r;
         if(full || r<R){
-          /* ── LENS ICI: bukum ── */
+          /* ── LENS ICI ──
+             WINDOW: kaynaktan ayni yaricapta ornek alinir, cember bir
+             penceredir. SQUEEZE: cemberin kenari kadrajin O YONDEKI kenarina
+             esitlenir, yani butun kare cemberin icine sikisir. */
           const rn2=r2/R2;
-          const k=(1+K*rn2*(1+C*diag))/NRM;
-          const base=r*k*hd;
+          let base;
+          if(SQ){
+            const rn=Math.sqrt(rn2);
+            base=rn*((1+K*rn2)/NRM)*REACH*hd;     // izotropik, C=0
+          }else{
+            base=r*((1+K*rn2*(1+C*diag))/NRM)*hd;
+          }
           const off=ca*rn2*base;
-          if(off<0.35){
+          // SQUEEZE: ornek noktasi kadrajin disina dustuyse orada goruntu yok
+          const voidPx = SQ && (cx+ux*base<-0.5 || cy+uy*base<-0.5 ||
+                                cx+ux*base>W1+0.5 || cy+uy*base>H1+0.5);
+          if(voidPx){
+            R0=G0=B0=0;
+            if(ognz>0.001){
+              const nz=(HSH(x,y,11)*0.62+HSH(x>>1,y>>1,12)*0.38)*ognz*34;
+              R0+=nz;G0+=nz;B0+=nz;
+            }
+          }else if(off<0.35){
             R0=bilS(S,w,cx+ux*base,cy+uy*base,0,W1,H1);
             G0=bilS(S,w,cx+ux*base,cy+uy*base,1,W1,H1);
             B0=bilS(S,w,cx+ux*base,cy+uy*base,2,W1,H1);
@@ -559,6 +618,13 @@ function warpFisheye(src,w,h){
             R0=bilS(S,w,cx+ux*gp,cy+uy*gp,0,W1,H1);
             G0=bilS(S,w,cx+ux*base,cy+uy*base,1,W1,H1);
             B0=bilS(S,w,cx+ux*gm,cy+uy*gm,2,W1,H1);
+          }
+        }else if(SQ){
+          /* ── SQUEEZE'de cemberin disi: goruntu yok, bos alan ── */
+          R0=G0=B0=0;
+          if(ognz>0.001){
+            const nz=(HSH(x,y,11)*0.62+HSH(x>>1,y>>1,12)*0.38)*ognz*34;
+            R0+=nz; G0+=nz; B0+=nz;
           }
         }else{
           /* ── LENS DISI: bukum yok, disari dogru hafif kirilma ── */
@@ -583,8 +649,18 @@ function warpFisheye(src,w,h){
         if(rim>0.001){
           let m=1;
           if(r<=R && r>R-bw){ const tt=(r-(R-bw))/bw; m=1-rim*0.85*tt*tt; }
-          else if(r>R && r<R+obw){ const tt=(r-R)/obw; m=1+rim*0.45*(1-tt)*(1-tt); }
+          // dis parlama bir kirilma etkisi: SQUEEZE'de disarida goruntu yok
+          else if(!SQ && r>R && r<R+obw){ const tt=(r-R)/obw; m=1+rim*0.45*(1-tt)*(1-tt); }
           if(m!==1){ R0*=m; G0*=m; B0*=m; }
+          /* SQUEEZE'de koyu halka siyah uzerinde gorunmez; merceğin kenari
+             yine de okunsun diye ince bir eklemeli hat cizilir. */
+          if(SQ){
+            const dd=r-R, wd=bw*0.55;
+            if(dd>-wd && dd<wd){
+              const tt=1-Math.abs(dd)/wd, add=rim*40*tt*tt;
+              R0+=add; G0+=add; B0+=add;
+            }
+          }
         }
       }
       Q[i]  =R0<0?0:R0>255?255:R0;
@@ -1170,7 +1246,8 @@ function boxToCanvas(b,w,h){
     const cx=w/2, cy=h/2, hd=Math.hypot(w,h)/2;
     const nx=(px-cx)/hd, ny=(py-cy)/hd, r=Math.hypot(nx,ny);
     if(r<1e-6) return [px,py];
-    const s2=(2*nx*ny/(r*r)), rd=fishFwd(r,s2*s2);
+    const s2=(2*nx*ny/(r*r));
+    const rd=fishFwd(r,s2*s2,lensReach(w,h));
     return [cx+(nx/r)*rd*hd, cy+(ny/r)*rd*hd];
   };
   let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
@@ -1704,6 +1781,18 @@ document.querySelectorAll('.mfd input[type=range]').forEach(r=>{
     if(r.id&&r.id.startsWith("p_")){S.draft=false;S.baseKey="";S.stillCache.clear();}
     draw();});
 });
+/* SQUEEZE'de anlamsiz kalan kontrolleri soluklastir: kose kivrimi kareye
+   ozgu, "outside desat" ise cemberin disinda goruntu oldugunu varsayiyor. */
+function lensUI(){
+  const sq=isSqueeze();
+  [["p_fishcnr",sq],["p_outdesat",sq],["p_lensfill",!sq]].forEach(([id,off])=>{
+    const e=$("#"+id); if(!e) return;
+    e.disabled=off; e.parentElement.classList.toggle("na",off);
+  });
+}
+["p_lensmode"].forEach(id=>{const e=$("#"+id); if(e) e.onchange=()=>{
+  S.baseKey="";S.stillCache.clear();lensUI();draw();};});
+{const e=$("#p_lensr"); if(e) ["input","change"].forEach(k=>e.addEventListener(k,lensUI));}
 ["p_res","p_fit"].forEach(id=>{const e=$("#"+id); if(e) e.onchange=()=>{
   S.baseKey="";S.stillCache.clear();applyRes();draw();};});
 {const e=$("#p_speed"); if(e) e.onchange=draw;}
@@ -1729,7 +1818,7 @@ $("#tl").addEventListener("click",e=>{
   S.t=dur*(e.clientX-r.left)/r.width; draw();
 });
 
-buildAeList(); buildTL(); applyRes(); grpInit(); fitStage();
+buildAeList(); buildTL(); applyRes(); grpInit(); fitStage(); lensUI();
 window.NYTA={S,FX,renderFrame,timeline,detect,blobDetect,outSize,AESTHETICS,buildBase,boxToCanvas,loadImageElement(img){
   S.img=img;S.baseKey="";S.stillCache.clear();S.t=0;S.dets=[];
   $("#empty").style.display="none";
@@ -1864,7 +1953,7 @@ buildAeList(); buildTL(); readouts();
    ═══════════════════════════════════════════════════════════════════════ */
 const PIDS=["p_falloff","p_floor","p_spread","p_halo","p_con","p_crush","p_fx","p_fy",
   "p_fish","p_fishamt","p_fishcnr","p_fishca",
-  "p_lensr","p_lensrim","p_lensw","p_outdesat","p_outgrain",
+  "p_lensr","p_lensmode","p_lensfill","p_lensrim","p_lensw","p_outdesat","p_outgrain",
   "p_grain","p_grainamt","p_grainsz","p_graincon",
   "p_boxes","p_det","p_minsz","p_labels","p_stamp","p_id","p_fxtext",
   "p_seg","p_xf","p_fps","p_seed","p_title","p_res","p_fit","p_scale","p_speed","p_crt"];
@@ -1925,7 +2014,7 @@ function restoreSession(){
   try{
     applyState(st);
     hist=[snapState()]; hi=0; paintUndo();
-    fitStage();
+    fitStage(); lensUI();
   }catch(err){
     try{ localStorage.removeItem(SESS_KEY); }catch(_){}
     console.warn("oturum geri yuklenemedi, varsayilanlara donuldu:",err);
