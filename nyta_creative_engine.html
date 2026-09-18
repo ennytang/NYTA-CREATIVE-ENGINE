@@ -200,6 +200,8 @@ button.pri:hover:not(:disabled){background:var(--pri);color:#000;box-shadow:0 0 
   letter-spacing:.1em;color:var(--tx2);overflow:hidden;white-space:nowrap;padding:0 5px;
   transition:.12s;position:relative}
 .seg em{font-style:normal;font-size:9px;color:var(--gho);letter-spacing:.1em}
+.seg>b{font-weight:inherit}
+.seg>i{display:none;font-style:normal}
 .seg:hover{background:#180509;border-color:var(--dim)}
 .seg.act{color:#000;font-weight:700}
 .seg.act em{color:rgba(0,0,0,.6)}
@@ -234,6 +236,52 @@ button.pri:hover:not(:disabled){background:var(--pri);color:#000;box-shadow:0 0 
 .read b{color:var(--tx2);font-weight:400;letter-spacing:.09em}
 .read span{color:var(--hot);font-variant-numeric:tabular-nums}
 @media(max-width:1320px){.mfd{width:300px;flex:0 0 300px}}
+
+/* ── MOBIL: yan paneller alt cekmeceye doner ───────────────────────────────
+   Paneller 348px sabit genislikteydi; telefonda iki panel + sahne yan yana
+   sigmadigi icin yatay kaydirma olusuyordu. 1000px altinda paneller akistan
+   cikip alttan acilan sayfalara donuyor, sahne tam genislige yayiliyor.
+   Masaustunde bu blok hic devreye girmez. */
+#mnav{display:none}
+#mdim{display:none}
+@media(max-width:1000px){
+  #frame{flex-direction:column}
+  /* Cekmece, sabit alt gezinme seridinin USTUNDE durur: aksi halde serit
+     cekmecenin altinda kalir ve ayni butona tekrar basip kapatmak mumkun
+     olmaz. Serit yuksekligi --navh olarak JS'ten olculur. */
+  .mfd{position:fixed;left:0;right:0;bottom:var(--navh,0px);width:auto;flex:0 0 auto;
+    max-height:70vh;z-index:980;border-top:1px solid var(--pri);
+    box-shadow:0 -18px 44px rgba(0,0,0,.82);
+    transform:translateY(calc(102% + var(--navh,0px)));transition:transform .22s ease}
+  .mfd.open{transform:none}
+  #mfdL{border-right:0} #mfdR{border-left:0}
+  #mdim{display:block;position:fixed;inset:0;background:rgba(0,0,0,.58);z-index:970;
+    opacity:0;pointer-events:none;transition:opacity .22s}
+  #mdim.on{opacity:1;pointer-events:auto}
+  #mnav{display:flex;gap:7px;position:fixed;left:0;right:0;bottom:0;z-index:990;
+    background:var(--hull);border-top:1px solid var(--rib);
+    padding:6px 8px calc(6px + env(safe-area-inset-bottom))}
+  #mnav button{flex:1;padding:11px 6px}
+  #bar{padding-bottom:calc(8px + var(--navh,0px))}
+  #stagewrap{padding:10px 12px}
+  #stagewrap::before,#stagewrap::after{display:none}   /* kenar cetvelleri */
+  #tl{height:30px}
+  .seg{font-size:11px;letter-spacing:.06em;padding:0 2px}
+  .seg>b{display:none} .seg>i{display:inline}
+  #ctl{flex-wrap:wrap;gap:7px}
+  #ctl button{padding:9px 14px}
+  #clock{font-size:11px}
+  /* dokunma hedefleri: parmakla tutulabilir olcu */
+  .row{margin:7px 0}
+  .row label{font-size:13px}
+  input[type=range]{height:28px}
+  input[type=range]::-webkit-slider-thumb{width:15px;height:26px;margin-top:-12px}
+  select,input[type=number],input[type=text]{padding:9px 8px;font-size:13px}
+  input[type=checkbox]{width:20px;height:20px}
+  input[type=checkbox]:checked::after{inset:5px}
+  .grp>h4{padding:9px}
+  #topbar{font-size:9px}
+}
 </style>
 </head>
 <body>
@@ -339,6 +387,10 @@ button.pri:hover:not(:disabled){background:var(--pri);color:#000;box-shadow:0 0 
           <span id="stat">standby</span>
           <span id="clock">00:00 / 00:00</span>
         </div>
+        <div id="mnav">
+          <button id="m_left">▤ INPUT / LENS</button>
+          <button id="m_right">▦ TRACK / OUTPUT</button>
+        </div>
       </div>
     </main>
 
@@ -423,6 +475,7 @@ button.pri:hover:not(:disabled){background:var(--pri);color:#000;box-shadow:0 0 
       </div>
     </aside>
   </div>
+  <div id="mdim"></div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
@@ -1948,7 +2001,7 @@ function buildTL(){
   list.forEach(a=>{
     const d=document.createElement("div");
     d.className="seg"; d.dataset.id=a.id; d.dataset.col=a.col;
-    d.textContent=a.name;
+    d.textContent=a.name;   /* NOT: bu tanim asagida window.buildTL ile eziliyor */
     d.onclick=()=>{const{seg}=timeline();S.t=list.indexOf(a)*seg+seg*0.5;draw();};
     tl.insertBefore(d,$("#head"));
   });
@@ -1999,6 +2052,32 @@ function fitStage(){
 addEventListener("resize",()=>{ clearTimeout(fitStage._t);
   fitStage._t=setTimeout(fitStage,60); });
 
+/* --- mobil cekmeceler ---
+   Masaustunde #mnav CSS ile gizli oldugu icin butonlar hic gorunmez ve bu
+   kod pratikte devre disi kalir. */
+function mobileNav(){
+  const dim=$("#mdim"), nav=$("#mnav");
+  /* Serit yuksekligini olc ve degisken olarak yaz: cekmece ile alt bandin
+     ikisi de buna dayaniyor, sabit bir sayi guvenli-alan dolgusuyla sasar. */
+  const measure=()=>{
+    const hOn = nav && getComputedStyle(nav).display!=="none";
+    document.documentElement.style.setProperty("--navh", hOn?nav.offsetHeight+"px":"0px");
+    fitStage();
+  };
+  measure();
+  addEventListener("resize",()=>{ clearTimeout(measure._t); measure._t=setTimeout(measure,80); });
+  const shut=()=>{ document.querySelectorAll(".mfd.open").forEach(e=>e.classList.remove("open"));
+                   if(dim) dim.classList.remove("on"); };
+  const toggle=sel=>{ const e=$(sel); if(!e) return;
+    const was=e.classList.contains("open"); shut();
+    if(!was){ e.classList.add("open"); if(dim) dim.classList.add("on"); } };
+  const L=$("#m_left"), R=$("#m_right");
+  if(L) L.onclick=()=>toggle("#mfdL");
+  if(R) R.onclick=()=>toggle("#mfdR");
+  if(dim) dim.onclick=shut;
+  addEventListener("keydown",e=>{ if(e.key==="Escape") shut(); });
+}
+
 /* --- panel bloklarini ac/kapa --- */
 const GRP_SHUT="nyta.grp.shut";
 function grpInit(){
@@ -2023,7 +2102,10 @@ function grpInit(){
   });
   /* Ilk acilis: panel hala tasiyorsa en uzun acik blogu kapat, sigana kadar.
      Kullanicinin kendi kaydi varsa buna hic karisma. */
-  if(ilk) ["mfdL","mfdR"].forEach(id=>{
+  /* Otomatik kapatma yalnizca panel gercekten YAN panelken anlamli; mobil
+     cekmecede yukseklik kucuk oldugu icin her blogu kapatirdi, oysa cekmece
+     kaydiriliyor. */
+  if(ilk && innerWidth>1000) ["mfdL","mfdR"].forEach(id=>{
     const pane=document.getElementById(id); if(!pane) return;
     for(let guard=0; guard<6 && pane.scrollHeight>pane.clientHeight+2; guard++){
       let big=null, bh=0;
@@ -2100,7 +2182,7 @@ $("#tl").addEventListener("click",e=>{
   S.t=dur*(e.clientX-r.left)/r.width; draw();
 });
 
-buildAeList(); buildTL(); applyRes(); grpInit(); fitStage(); lensUI();
+buildAeList(); buildTL(); applyRes(); grpInit(); mobileNav(); fitStage(); lensUI();
 window.NYTA={S,FX,renderFrame,timeline,detect,blobDetect,outSize,AESTHETICS,buildBase,boxToCanvas,twistProf,
   visibleDets,contrastMap,salientBox,partOf,loadImageElement(img){
   S.img=img;S.baseKey="";S.stillCache.clear();S.t=0;S.dets=[];
@@ -2166,7 +2248,12 @@ window.buildTL=function(){
   list.forEach((a,i)=>{
     const d=document.createElement("div");
     d.className="seg"; d.dataset.id=a.id; d.dataset.col=a.col;
-    d.innerHTML=a.name+'<em>'+CODE[a.id]+' · '+BANK[AESTHETICS.indexOf(a)].slice(-2)+'</em>';
+    /* Iki etiket birden: telefonda alti tam ad 412px'e sigmiyor ve okunmaz
+       hale geliyordu. CSS dar ekranda kisa olani gosterir; segment geometrisi
+       degismedigi icin oynatma basi yerinde kalir. */
+    const abbr=a.name.split(/\s+/)[0].slice(0,3).toUpperCase();
+    d.innerHTML='<b>'+a.name+'</b><i>'+abbr+'</i>'
+      +'<em>'+CODE[a.id]+' · '+BANK[AESTHETICS.indexOf(a)].slice(-2)+'</em>';
     d.onclick=()=>{const{seg}=timeline();S.t=i*seg+seg*0.5;draw();};
     tl.insertBefore(d,$("#head"));
   });
