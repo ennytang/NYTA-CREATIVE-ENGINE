@@ -295,6 +295,14 @@ button.pri:hover:not(:disabled){background:var(--pri);color:#000;box-shadow:0 0 
             <option value="window">WINDOW — lens over frame</option>
           </select></div>
         <div class="row"><label>warp amount</label><input type="range" id="p_fishamt" min="0" max="1" step="0.02" value="0.40"><output></output></div>
+        <div class="row"><label>twist</label><input type="range" id="p_twist" min="0" max="1" step="0.02" value="0.34"><output></output></div>
+        <div class="row"><label>twist curve</label>
+          <select id="p_twistmode" style="flex:1.35">
+            <option value="bell">BELL — mid-band swirl</option>
+            <option value="spiral">SPIRAL — core-weighted</option>
+            <option value="whip">WHIP — rim-weighted</option>
+            <option value="log">LOG — true spiral</option>
+          </select></div>
         <div class="row"><label>corner curl</label><input type="range" id="p_fishcnr" min="0" max="3" step="0.05" value="1.60"><output></output></div>
         <div class="row"><label>edge fringing</label><input type="range" id="p_fishca" min="0" max="1" step="0.02" value="0.35"><output></output></div>
         <div class="row"><label>lens radius</label><input type="range" id="p_lensr" min="0.30" max="1" step="0.02" value="0.62"><output></output></div>
@@ -479,6 +487,7 @@ function paramSig(){
   const cb=id=>{const e=$("#"+id);return e&&e.checked?1:0;};
   return [P("falloff"),P("floor"),P("spread"),P("halo"),P("con"),P("crush"),P("fx"),P("fy"),
           cb("p_fish"),P("fishamt"),P("fishcnr"),P("fishca"),
+          P("twist"),$("#p_twistmode")?$("#p_twistmode").value:"bell",
           P("lensr"),P("lensfill"),P("lensrim"),P("lensw"),P("outdesat"),P("outgrain"),
           $("#p_lensmode")?$("#p_lensmode").value:"squeeze",
           cb("p_grain"),P("grainamt"),P("grainsz"),P("graincon"),
@@ -535,6 +544,25 @@ function lensCurlW(){ const R=lensR();
 function fishCE(){ return isSqueeze() ? 0 : fishC()*lensCurlW(); }
 function fishF(r,s2){ return 1 + fishK()*r*r*(1 + fishCE()*s2); }
 function fishNorm(){ return 1 + fishK()*(1 + fishCE()); }
+/* ───────────────────────────────────────────────────────────────────────────
+   BURGU (twist) — radyal bukumun uzerine ACISAL bir bilesen
+   Klasik fisheye sadece yaricapi degistirir; cizgiler merkeze dogru duz
+   gider. Burgu, ornekleme acisini yaricapa bagli olarak dondurur: her yonden
+   farkli bir aciyla yola cikan ama ayni merkeze dogru kivrilan izler olusur.
+   Profil, dondurmenin yaricap boyunca nasil dagildigini belirler.
+   ───────────────────────────────────────────────────────────────────────── */
+function twistAmt(){ const e=$("#p_twist"); const v=e?parseFloat(e.value):0;
+                     return (isFinite(v)?v:0)*2.0; }              // radyan
+function twistMode(){ const e=$("#p_twistmode"); return e?e.value:"bell"; }
+function twistProf(rn){
+  rn=rn<0?0:rn>1?1:rn;
+  switch(twistMode()){
+    case "spiral": return (1-rn)*(1-rn);          // merkezde en guclu
+    case "whip":   return rn*rn;                   // kenarda en guclu
+    case "log":    return Math.log(1/Math.max(rn,0.035))/3.35;  // gercek spiral
+    default:       return 4*rn*(1-rn);             // bell: orta bantta
+  }
+}
 /* Lens yaricapi: yari-kosegenin orani. 1.00 = tum kare (cember yok). */
 function lensR(){ const e=$("#p_lensr"); const v=e?parseFloat(e.value):1;
                   return (isFinite(v)&&v>0.02)?v:1; }
@@ -574,6 +602,7 @@ function warpFisheye(src,w,h){
   const W1=w-1.001, H1=h-1.001, K=fishK(), C=fishCE(), NRM=fishNorm();
   const R=lensR(), R2=R*R, full=(R>=0.999), SQ=isSqueeze();
   const REACH=lensReach(w,h);                   // SQUEEZE kapsama yaricapi
+  const TW=twistAmt();                          // burgu siddeti (radyan)
   const rim=P("lensrim");
   const bw=Math.max(1e-4,(0.015+0.10*P("lensw"))*R);   // ic halka genisligi
   const obw=bw*0.60;                                    // dis parlama bandi
@@ -600,18 +629,23 @@ function warpFisheye(src,w,h){
              WINDOW: kaynaktan ayni yaricapta ornek alinir, cember bir
              penceredir. SQUEEZE: cemberin kenari kadrajin O YONDEKI kenarina
              esitlenir, yani butun kare cemberin icine sikisir. */
-          const rn2=r2/R2;
+          const rn2=r2/R2, rn=Math.sqrt(rn2);
           let base;
           if(SQ){
-            const rn=Math.sqrt(rn2);
             base=rn*((1+K*rn2)/NRM)*REACH*hd;     // izotropik, C=0
           }else{
             base=r*((1+K*rn2*(1+C*diag))/NRM)*hd;
           }
+          // BURGU: ornekleme yonunu yaricapa gore dondur
+          let vx=ux, vy=uy;
+          if(TW!==0){
+            const aa=Math.atan2(uy,ux)+TW*twistProf(rn);
+            vx=Math.cos(aa); vy=Math.sin(aa);
+          }
           const off=ca*rn2*base;
           // SQUEEZE: ornek noktasi kadrajin disina dustuyse orada goruntu yok
-          const voidPx = SQ && (cx+ux*base<-0.5 || cy+uy*base<-0.5 ||
-                                cx+ux*base>W1+0.5 || cy+uy*base>H1+0.5);
+          const voidPx = SQ && (cx+vx*base<-0.5 || cy+vy*base<-0.5 ||
+                                cx+vx*base>W1+0.5 || cy+vy*base>H1+0.5);
           if(voidPx){
             R0=G0=B0=0;
             if(ognz>0.001){
@@ -619,14 +653,14 @@ function warpFisheye(src,w,h){
               R0+=nz;G0+=nz;B0+=nz;
             }
           }else if(off<0.35){
-            R0=bilS(S,w,cx+ux*base,cy+uy*base,0,W1,H1);
-            G0=bilS(S,w,cx+ux*base,cy+uy*base,1,W1,H1);
-            B0=bilS(S,w,cx+ux*base,cy+uy*base,2,W1,H1);
+            R0=bilS(S,w,cx+vx*base,cy+vy*base,0,W1,H1);
+            G0=bilS(S,w,cx+vx*base,cy+vy*base,1,W1,H1);
+            B0=bilS(S,w,cx+vx*base,cy+vy*base,2,W1,H1);
           }else{
             const gp=base+off, gm=base-off;
-            R0=bilS(S,w,cx+ux*gp,cy+uy*gp,0,W1,H1);
-            G0=bilS(S,w,cx+ux*base,cy+uy*base,1,W1,H1);
-            B0=bilS(S,w,cx+ux*gm,cy+uy*gm,2,W1,H1);
+            R0=bilS(S,w,cx+vx*gp,cy+vy*gp,0,W1,H1);
+            G0=bilS(S,w,cx+vx*base,cy+vy*base,1,W1,H1);
+            B0=bilS(S,w,cx+vx*gm,cy+vy*gm,2,W1,H1);
           }
         }else if(SQ){
           /* ── SQUEEZE'de cemberin disi: goruntu yok, bos alan ── */
@@ -1277,7 +1311,12 @@ function boxToCanvas(b,w,h){
     if(r<1e-6) return [px,py];
     const s2=(2*nx*ny/(r*r));
     const rd=fishFwd(r,s2*s2,lensReach(w,h));
-    return [cx+(nx/r)*rd*hd, cy+(ny/r)*rd*hd];
+    /* Warp tuval->kaynak yonunde aciyi +TW*prof kadar dondurdugu icin
+       kaynak->tuval yonunde ayni miktar geri alinir. */
+    let aa=Math.atan2(ny,nx);
+    const TW=twistAmt();
+    if(TW!==0){ const Rl=lensR(); aa-=TW*twistProf(Math.min(1,rd/Math.max(1e-6,Rl))); }
+    return [cx+Math.cos(aa)*rd*hd, cy+Math.sin(aa)*rd*hd];
   };
   let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
   const N=9;
@@ -1511,7 +1550,7 @@ function drawStamp(dst,w,h,S1,col,label){
   const txt="ID: "+id;
   /* Rozet %60 kucultuldu: punto da, ic bosluklar da ayni carpanla iner ki
      kutunun oranlari bozulmasin. Alt sinirlar da ayni oranda dustu. */
-  const SC=0.56;
+  const SC=0.73;
   const F=Math.max(7,(22*SC*S1)|0);         // damga punto
   const MF=Math.max(6,(13*SC*S1)|0);        // meta punto
   dst.save();
@@ -1948,7 +1987,7 @@ function lensUI(){
     e.disabled=off; e.parentElement.classList.toggle("na",off);
   });
 }
-["p_lensmode"].forEach(id=>{const e=$("#"+id); if(e) e.onchange=()=>{
+["p_lensmode","p_twistmode"].forEach(id=>{const e=$("#"+id); if(e) e.onchange=()=>{
   S.baseKey="";S.stillCache.clear();lensUI();draw();};});
 {const e=$("#p_lensr"); if(e) ["input","change"].forEach(k=>e.addEventListener(k,lensUI));}
 ["p_res","p_fit"].forEach(id=>{const e=$("#"+id); if(e) e.onchange=()=>{
@@ -1977,7 +2016,7 @@ $("#tl").addEventListener("click",e=>{
 });
 
 buildAeList(); buildTL(); applyRes(); grpInit(); fitStage(); lensUI();
-window.NYTA={S,FX,renderFrame,timeline,detect,blobDetect,outSize,AESTHETICS,buildBase,boxToCanvas,
+window.NYTA={S,FX,renderFrame,timeline,detect,blobDetect,outSize,AESTHETICS,buildBase,boxToCanvas,twistProf,
   visibleDets,contrastMap,salientBox,partOf,loadImageElement(img){
   S.img=img;S.baseKey="";S.stillCache.clear();S.t=0;S.dets=[];
   $("#empty").style.display="none";
@@ -2111,7 +2150,7 @@ buildAeList(); buildTL(); readouts();
    nesneyi localStorage'a koyar.
    ═══════════════════════════════════════════════════════════════════════ */
 const PIDS=["p_falloff","p_floor","p_spread","p_halo","p_con","p_crush","p_fx","p_fy",
-  "p_fish","p_fishamt","p_fishcnr","p_fishca",
+  "p_fish","p_fishamt","p_fishcnr","p_fishca","p_twist","p_twistmode",
   "p_lensr","p_lensmode","p_lensfill","p_lensrim","p_lensw","p_outdesat","p_outgrain",
   "p_grain","p_grainamt","p_grainsz","p_graincon",
   "p_boxes","p_det","p_minsz","p_partsz","p_labels","p_stamp","p_id","p_fxtext",
