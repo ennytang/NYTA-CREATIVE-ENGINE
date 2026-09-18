@@ -392,7 +392,7 @@ button.pri:hover:not(:disabled){background:var(--pri);color:#000;box-shadow:0 0 
         <div class="row"><label>still scale</label><select id="p_scale" style="flex:1.35">
             <option value="1">1×</option><option value="2" selected>2×</option><option value="3">3×</option></select></div>
         <div class="btns">
-          <button id="b_vid" class="pri" disabled>◉ RECORD WEBM</button>
+          <button id="b_vid" class="pri" disabled>◉ RECORD VIDEO</button>
           <button id="b_stills" disabled>◧ STILLS ×<span id="b_stills_n">06</span> (PNG)</button>
           <button id="b_shot" disabled>⬓ GRAB FRAME</button>
         </div>
@@ -1844,9 +1844,21 @@ async function exportVideo(){
   fullQuality();
   const {w,h}=outSize(), fps=parseInt($("#p_fps").value,10), {dur}=timeline();
   const c=cv(w,h), x=c.getContext("2d",{willReadFrequently:true});
-  const mimes=["video/webm;codecs=vp9","video/webm;codecs=vp8","video/webm"];
-  const mime=mimes.find(m=>MediaRecorder.isTypeSupported(m));
-  if(!mime){status("MediaRecorder not supported",2);return;}
+  /* MP4 once denenir: Chrome 126'dan beri MediaRecorder H.264/MP4 yazabiliyor,
+     yani donusturucuye gerek yok. avc1.4D401F (Main) once, kalite icin;
+     yoksa Baseline, sonra AV1-in-MP4, en sonunda WebM'e duser. Uzanti
+     secilen kapsayiciya gore belirlenir — .webm dosyayi mp4 diye adlandirmak
+     oynatici tarafinda daha kotu bir sorun olurdu. */
+  const mimes=[
+    ["video/mp4;codecs=avc1.4D401F","mp4"],
+    ["video/mp4;codecs=avc1.42E01E","mp4"],
+    ["video/mp4","mp4"],
+    ["video/webm;codecs=vp9","webm"],
+    ["video/webm;codecs=vp8","webm"],
+    ["video/webm","webm"]];
+  const pick=mimes.find(([m])=>MediaRecorder.isTypeSupported(m));
+  if(!pick){status("MediaRecorder not supported",2);return;}
+  const mime=pick[0], ext=pick[1];
   status("recording… 0%",1);
   setBusy(true);
   const stream=c.captureStream(fps), rec=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:12e6});
@@ -1865,9 +1877,10 @@ async function exportVideo(){
   renderFrame(x,w,h,dur-1e-3);
   await new Promise(r=>setTimeout(r,120));
   rec.stop(); await done;
-  dl(new Blob(chunks,{type:mime}),"NYTA_"+Date.now()+".webm");
+  dl(new Blob(chunks,{type:mime}),"NYTA_"+Date.now()+"."+ext);
   const eff=(drawn/wall).toFixed(1);
-  status("video ready — "+wall.toFixed(2)+"s @ "+sp+"× , ~"+eff+" fps ("+drawn+" frames)");
+  status(ext.toUpperCase()+" ready — "+wall.toFixed(2)+"s @ "+sp+"× , ~"+eff+" fps ("+drawn+" frames)"
+    +(ext==="webm"?" — no MP4 encoder in this browser, use webm_to_mp4.bat":""));
   setBusy(false);
 }
 
