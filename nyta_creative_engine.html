@@ -298,9 +298,9 @@ button.pri:hover:not(:disabled){background:var(--pri);color:#000;box-shadow:0 0 
         <div class="row"><label>twist</label><input type="range" id="p_twist" min="0" max="1" step="0.02" value="0.34"><output></output></div>
         <div class="row"><label>twist curve</label>
           <select id="p_twistmode" style="flex:1.35">
+            <option value="whip" selected>WHIP — rim-weighted</option>
             <option value="bell">BELL — mid-band swirl</option>
             <option value="spiral">SPIRAL — core-weighted</option>
-            <option value="whip">WHIP — rim-weighted</option>
             <option value="log">LOG — true spiral</option>
           </select></div>
         <div class="row"><label>corner curl</label><input type="range" id="p_fishcnr" min="0" max="3" step="0.05" value="1.60"><output></output></div>
@@ -466,7 +466,10 @@ function fmt(s){const m=Math.floor(s/60),x=Math.floor(s%60);return String(m).pad
    gorusu ekipmaninin klasik ikilisi alindi — yesil goruntu, kehribar
    telemetri. */
 const AESTHETICS=[
- {id:"cool",   name:"EFFORTLESS COOL",    sub:"night paparazzi / high-low",  col:"#b4e5ff", amt:0.85, on:true},
+ /* id "cool" olarak KALIYOR: kayitli oturumlar ve preset slotlari banklari
+    id ile bulur, degistirsem eski kayitlar bu banki bulamaz. Gorunen ad ve
+    efekt krom aynaya cevrildi. */
+ {id:"cool",   name:"CHROME MIRROR",      sub:"convex mirror / metal surface", col:"#b4e5ff", amt:0.85, on:true},
  {id:"noir",   name:"TECH NOIR",          sub:"green phosphor night vision",     col:"#ffa31a", amt:0.90, on:true},
  {id:"horror", name:"ANALOG HORROR",      sub:"VHS breakup / tape warp",      col:"#a64dff", amt:0.85, on:true},
  {id:"mil",    name:"MILITARY REALISM",   sub:"FLIR thermal / targeting HUD",  col:"#ffb800", amt:0.90, on:true},
@@ -526,6 +529,33 @@ function isSqueeze(){ return lensMode()==="squeeze" && lensR()<0.999; }
      fill=1 -> erisim = yari-kisa-kenar : cember tumuyle dolar, kadrajin
                koseleri kirpilir
    Arasi dogrusal gecis. */
+/* ───────────────────────────────────────────────────────────────────────────
+   SQUEEZE YARICAP PROFILI — konveks AYNA KURESI
+   Varil bukumu tek bir yaricap fonksiyonuydu ve merkeze dogru cizgiler duz
+   gidiyordu. Ayna kuresinde ise: goruntu yaricapi rn olan noktada yuzey
+   normali asin(rn) kadar egilir, yansiyan isin bunun IKI KATI aciyla gider.
+   Kaynagi esit-acili bir tabak kabul edersek
+       t(rn) = (2/pi) * asin(rn)
+   olur. Merkezi 1/0.637 = 1.57 kat buyutur ve kenara dogru sikistirma
+   sinirsiz artar — cevrenin tamami dis halkaya sarilir; fotograftaki etki
+   tam olarak budur. "warp amount" dogrusal ile tam ayna arasinda gecis
+   yapar, iki uc da g(1)=1 kosulunu sagladigi icin cemberin kenari her iki
+   durumda da kadraj kenarina oturur.
+   ───────────────────────────────────────────────────────────────────────── */
+function mirrorG(rn){
+  rn=rn<0?0:rn>0.999999?0.999999:rn;
+  return (2/Math.PI)*Math.asin(rn);
+}
+/* Kaynak duz bir fotograf oldugu icin (gercek bir ayna kuresi gibi 360 derece
+   cevre tasimiyor) saf ayna egrisi tek basina yeterince agresif degildi.
+   Karisim orani 1'in OTESINE tasiniyor: dogrusaldan ayna egrisine dogru
+   ekstrapolasyon. Katlanma sinirini kontrol ettim — merkezdeki turev
+   1-M+0.637M oldugu icin M=2.755'te sifirlanir; ust sinir 2.0'da tutuldu,
+   orada merkez buyutmesi ~4x ve harita hala monoton. */
+function squeezeG(rn){
+  const M=P("fishamt")*2.0;
+  return rn*(1-M) + mirrorG(rn)*M;
+}
 function lensReach(w,h){
   const hd=Math.hypot(w,h)/2;
   const ins=Math.min(w,h)/2/hd;            // ic teget daire
@@ -553,14 +583,15 @@ function fishNorm(){ return 1 + fishK()*(1 + fishCE()); }
    ───────────────────────────────────────────────────────────────────────── */
 function twistAmt(){ const e=$("#p_twist"); const v=e?parseFloat(e.value):0;
                      return (isFinite(v)?v:0)*2.0; }              // radyan
-function twistMode(){ const e=$("#p_twistmode"); return e?e.value:"bell"; }
+function twistMode(){ const e=$("#p_twistmode"); return e?e.value:"whip"; }
 function twistProf(rn){
   rn=rn<0?0:rn>1?1:rn;
   switch(twistMode()){
     case "spiral": return (1-rn)*(1-rn);          // merkezde en guclu
     case "whip":   return rn*rn;                   // kenarda en guclu
     case "log":    return Math.log(1/Math.max(rn,0.035))/3.35;  // gercek spiral
-    default:       return 4*rn*(1-rn);             // bell: orta bantta
+    case "bell":   return 4*rn*(1-rn);             // orta bantta
+    default:       return rn*rn;                   // whip: kenarda en guclu
   }
 }
 /* Lens yaricapi: yari-kosegenin orani. 1.00 = tum kare (cember yok). */
@@ -575,6 +606,10 @@ function fishFwd(rSrc,s2,reach){
   if(isSqueeze()){
     t=rSrc/Math.max(1e-6,(reach||1));
     if(t>=1) return R;
+    // squeezeG monoton: ikiye bolerek tersini al
+    let lo=0, hi=1;
+    for(let i=0;i<26;i++){ const m=(lo+hi)/2; (squeezeG(m)<t)?lo=m:hi=m; }
+    return ((lo+hi)/2)*R;
   }else{
     if(rSrc>=R) return rSrc;
     t=rSrc/R;
@@ -632,7 +667,7 @@ function warpFisheye(src,w,h){
           const rn2=r2/R2, rn=Math.sqrt(rn2);
           let base;
           if(SQ){
-            base=rn*((1+K*rn2)/NRM)*REACH*hd;     // izotropik, C=0
+            base=squeezeG(rn)*REACH*hd;           // ayna kuresi, izotropik
           }else{
             base=r*((1+K*rn2*(1+C*diag))/NRM)*hd;
           }
@@ -949,6 +984,14 @@ const LUT_FLIR=makeLUT(l=>{ // ironbow
 const LUT_COOL=makeLUT(l=>{ // sıcak ön plan / soğuk gölge split-tone
   const w=Math.pow(l,0.92);
   return[clamp(w*1.06+0.012,0,1), clamp(w*0.99+0.006,0,1), clamp(w*0.93+0.052*(1-w),0,1)];});
+/* Krom: golgeler celik mavisi, orta tonlar notr gri, tepeler sert bir dizde
+   beyaza patlar. Metali metal yapan sey pürüzsüz bir ramp degil, bu diz. */
+const LUT_CHROME=makeLUT(l=>{
+  const v=Math.pow(l,0.86);
+  const spec=Math.pow(clamp((v-0.60)/0.40,0,1),1.7);      // tepe parlamasi
+  return[clamp(v*0.90+0.030+spec*0.58,0,1),
+         clamp(v*0.94+0.044+spec*0.55,0,1),
+         clamp(v*1.02+0.082+spec*0.48,0,1)];});
 
 const BAYER=[0,32,8,40,2,34,10,42,48,16,56,24,50,18,58,26,12,44,4,36,14,46,6,38,
              60,28,52,20,62,30,54,22,3,35,11,43,1,33,9,41,51,19,59,27,49,17,57,25,
@@ -957,31 +1000,47 @@ const BAYER=[0,32,8,40,2,34,10,42,48,16,56,24,50,18,58,26,12,44,4,36,14,46,6,38,
 /* -- akımlar ---------------------------------------------------------------- */
 const FX={
 
-/* ---- EFFORTLESS COOL: gece paparazzisi ---- */
+/* ---- CHROME MIRROR: konveks ayna / metal yuzey ----
+   Katmanlarin hepsi lens cemberine kirpilir; yoksa parlama ve hotspot
+   merceğin disindaki bos alani da aydinlatir. */
 cool:{
   still(src,w,h,a){
     const c=cv(w,h),x=c.getContext("2d",{willReadFrequently:true});
     x.drawImage(src,0,0);
-    applyLUT(c,w,h,LUT_COOL,a);
-    // ekstra bloom — flaşın ön plandaki parlamasını abartır
-    x.save(); x.globalCompositeOperation="screen"; x.globalAlpha=0.18*a;
-    x.filter="blur("+w*0.018+"px)"; x.drawImage(c,0,0); x.restore();
-    vignette(x,w,h,0.40*a);
+    applyLUT(c,w,h,LUT_CHROME,a);
+    // kure golgelemesi: gercek bir krom kure kenara dogru koyulasir
+    vignette(x,w,h,0.54*a);
+    // tepe parlamasi — merkezden kaydirilmis yumusak hotspot
+    x.save(); clipLens(x,w,h);
+    x.globalCompositeOperation="screen"; x.globalAlpha=0.58*a;
+    const hx=w*0.37, hy=h*0.29, hr=Math.min(w,h)*0.44;
+    const g=x.createRadialGradient(hx,hy,0,hx,hy,hr);
+    g.addColorStop(0,   "rgba(255,255,255,0.60)");
+    g.addColorStop(0.42,"rgba(202,222,248,0.15)");
+    g.addColorStop(1,   "rgba(0,0,0,0)");
+    x.fillStyle=g; x.fillRect(0,0,w,h); x.restore();
+    // metalde parlama yayilir
+    x.save(); x.globalCompositeOperation="screen"; x.globalAlpha=0.20*a;
+    x.filter="blur("+w*0.013+"px)"; x.drawImage(c,0,0); x.restore();
     return c;
   },
   frame(dst,st,w,h,p){
-    const s=1+0.0035*Math.sin(p.f*0.21)*p.a;          // hafif kapı titremesi
-    dst.save();
-    dst.translate(w/2,h/2); dst.scale(s,s);
-    dst.translate(-w/2+(p.rnd()-0.5)*1.2*p.S,-h/2+(p.rnd()-0.5)*1.2*p.S);
-    dst.drawImage(st,0,0); dst.restore();
-    grain(dst,w,h,p.rnd,0.055*p.a,160);
-    if(p.rnd()<0.10){ // seyrek ışık sızıntısı
-      const g=dst.createLinearGradient(0,0,w,h);
-      g.addColorStop(0,"rgba(255,180,90,"+(0.05*p.a)+")");
-      g.addColorStop(1,"rgba(0,0,0,0)");
-      dst.save();dst.globalCompositeOperation="screen";dst.fillStyle=g;dst.fillRect(0,0,w,h);dst.restore();
-    }
+    dst.drawImage(st,0,0);
+    /* Isik yuzeyde yuruyor: egik, yumusak bir parlama bandi segment boyunca
+       kayar. Faz p.local'dan gelir, boylece sekans dongusuyle ayni ritimde. */
+    const t=(p.local!==undefined?p.local:(p.t%1));
+    const sweep=-0.30+1.60*t, ang=-0.42;
+    const dx=Math.cos(ang), dy=Math.sin(ang), L=Math.hypot(w,h);
+    dst.save(); clipLens(dst,w,h);
+    dst.globalCompositeOperation="screen"; dst.globalAlpha=0.32*p.a;
+    const g=dst.createLinearGradient(
+      w/2+dx*(sweep-0.20)*L, h/2+dy*(sweep-0.20)*L,
+      w/2+dx*(sweep+0.20)*L, h/2+dy*(sweep+0.20)*L);
+    g.addColorStop(0,  "rgba(0,0,0,0)");
+    g.addColorStop(0.5,"rgba(228,241,255,0.52)");
+    g.addColorStop(1,  "rgba(0,0,0,0)");
+    dst.fillStyle=g; dst.fillRect(0,0,w,h); dst.restore();
+    grain(dst,w,h,p.rnd,0.042*p.a,170);
   }
 },
 
@@ -1340,6 +1399,12 @@ function lensGeom(w,h){
   const hd=Math.hypot(w,h)/2;
   return {cx:w/2, cy:h/2, rad:R*hd};
 }
+/* Katmanlar yalnizca merceğin icini etkilesin: lens etkinse dairesel kirpma
+   uygular, degilse hicbir sey yapmaz. Cagiran ctx.save() yapmis olmalidir. */
+function clipLens(ctx,w,h){
+  const G=lensGeom(w,h); if(!G) return;
+  ctx.beginPath(); ctx.arc(G.cx,G.cy,G.rad,0,Math.PI*2); ctx.clip();
+}
 /* Sol-ust kosesi (x,y) olan bw x bh bloku cemberin icinde kalacak sekilde
    merkeze dogru kaydirir. */
 function fitInLens(x,y,bw,bh,w,h){
@@ -1373,8 +1438,15 @@ function lensHasPoint(px,py,w,h){
    diger eksende en az o kadar, cogu zaman daha fazla yer kalir. Iki sirayi da
    dener, daha genis kutuyu veren sirayi secer. Hicbir durumda kutu cokmez. */
 function clampToLens(R,w,h){
-  if(!(on("p_fish")&&P("fishamt")>0.001)) return R;
-  const Rl=lensR(); if(Rl>=0.999) return R;
+  /* Lens cemberi yoksa (kapali ya da tam kadraj) hic degilse KADRAJ disina
+     tasmasin: burgu, kose kutularini kadrajin otesine itebiliyor. */
+  const toFrame=B=>{
+    const x0=Math.max(0,B.x), y0=Math.max(0,B.y);
+    const x1=Math.min(w,B.x+B.w), y1=Math.min(h,B.y+B.h);
+    return (x1>x0&&y1>y0)?{x:x0,y:y0,w:x1-x0,h:y1-y0}:{x:B.x,y:B.y,w:0,h:0};
+  };
+  if(!(on("p_fish")&&P("fishamt")>0.001)) return toFrame(R);
+  const Rl=lensR(); if(Rl>=0.999) return toFrame(R);
   const cx=w/2, cy=h/2, hd=Math.hypot(w,h)/2;
   const rad=Rl*hd - Math.max(2, 0.006*hd);      // cam kenarinin hemen icinde dur
   const q=rad*Math.SQRT1_2;                      // ic karenin yari kenari
