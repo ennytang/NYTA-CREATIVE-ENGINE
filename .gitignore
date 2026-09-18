@@ -8,6 +8,7 @@
 *
 
 !.gitignore
+!.nojekyll
 !README.md
 !LICENSE
 !index.html
