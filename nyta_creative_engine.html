@@ -376,9 +376,9 @@ button.pri:hover:not(:disabled){background:var(--pri);color:#000;box-shadow:0 0 
 
       <div class="grp">
         <h4><em>SURROUND</em><code>SUR-08</code></h4>
-        <div class="row"><label>echo smear</label><input type="range" id="p_surecho" min="0" max="1" step="0.02" value="0.45"><output></output></div>
-        <div class="row"><label>light rays</label><input type="range" id="p_surrays" min="0" max="1" step="0.02" value="0.85"><output></output></div>
-        <div class="row"><label>long spikes</label><input type="range" id="p_surspikes" min="0" max="1" step="0.02" value="0.70"><output></output></div>
+        <div class="row"><label>echo smear</label><input type="range" id="p_surecho" min="0" max="1" step="0.02" value="1.00"><output></output></div>
+        <div class="row"><label>light rays</label><input type="range" id="p_surrays" min="0" max="1" step="0.02" value="0"><output></output></div>
+        <div class="row"><label>long spikes</label><input type="range" id="p_surspikes" min="0" max="1" step="0.02" value="0"><output></output></div>
       </div>
 
       <div class="grp">
@@ -2014,18 +2014,21 @@ function surround(dst,w,h,col){
     ex.setTransform(1,0,0,1,0,0);
     ex.globalAlpha=1; ex.filter="none"; ex.globalCompositeOperation="source-over";
     ex.clearRect(0,0,w,h);
-    for(let i=1;i<=3;i++){
-      const sc=1+i*(0.20*ECHO);
-      ex.globalAlpha=Math.min(1,(0.22*ECHO)/Math.sqrt(i));
-      ex.filter="blur("+(w*0.008*i)+"px) saturate(0.70) brightness(0.55)";
+    for(let i=1;i<=6;i++){
+      const sc=1+i*(0.16*ECHO);
+      ex.globalAlpha=Math.min(1,(0.40*ECHO)/Math.sqrt(i));
+      ex.filter="blur("+(w*0.006*i)+"px) saturate(0.75) brightness(0.80)";
       ex.drawImage(dst.canvas, cx-cx*sc, cy-cy*sc, w*sc, h*sc);
       ex.globalCompositeOperation="lighter";
     }
     ex.filter="none"; ex.globalAlpha=1;
     ex.globalCompositeOperation="destination-in";
-    const mg=ex.createRadialGradient(cx,cy,rad*0.99,cx,cy,rad*1.75);
+    /* Maske C'deki serbest yayilimi korumak icin cok yumusak: kadraj kosesi
+       1.61R'de ve orada hala tam guce yakin. Tek isi 2.6R'nin otesinde duz
+       bir zemin birakmamak. */
+    const mg=ex.createRadialGradient(cx,cy,rad*1.30,cx,cy,rad*2.60);
     mg.addColorStop(0,"rgba(0,0,0,1)");
-    mg.addColorStop(0.45,"rgba(0,0,0,0.42)");
+    mg.addColorStop(0.55,"rgba(0,0,0,0.80)");
     mg.addColorStop(1,"rgba(0,0,0,0)");
     ex.fillStyle=mg; ex.fillRect(0,0,w,h);
     ex.globalCompositeOperation="source-over";
