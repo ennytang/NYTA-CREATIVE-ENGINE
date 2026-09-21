@@ -1,0 +1,10 @@
+# Satir sonlarini tek bir yerde karara bagla.
+# Bu dosya yoktu: depoda LF, Windows'ta CRLF tutulan .bat dosyalari her
+# commit'te degismis gorunuyordu ve bir geri alma islemi tum HTML'i 2181
+# satir degismis gibi gostermisti. Fark artik gercek icerik degisikligini
+# gosterir.
+* text=auto eol=lf
+*.bat   text eol=crlf
+*.ps1   text eol=crlf
+*.ico   binary
+*.png   binary

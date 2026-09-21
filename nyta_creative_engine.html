@@ -445,7 +445,7 @@ button.pri:hover:not(:disabled){background:var(--pri);color:#000;box-shadow:0 0 
             <option value="1">1×</option><option value="2" selected>2×</option><option value="3">3×</option></select></div>
         <div class="btns">
           <button id="b_vid" class="pri" disabled>◉ RECORD VIDEO</button>
-          <button id="b_stills" disabled>◧ STILLS ×<span id="b_stills_n">06</span> (PNG)</button>
+          <button id="b_stills" disabled>◧ SHEET ×<span id="b_stills_n">06</span> (1 PNG)</button>
           <button id="b_shot" disabled>⬓ GRAB FRAME</button>
         </div>
       </div>
@@ -1938,22 +1938,42 @@ async function exportVideo(){
 }
 
 /* --- her akımdan 1 yüksek çözünürlüklü still --- */
+/* TEK DOSYA — her aktif bank icin bir kare render edilir ve hepsi TEK bir
+   PNG'ye dizilir. Onceki davranis bank basina ayri dosya indiriyordu: alti
+   ardi ardina inince tarayicinin indirme kuyrugu dosyalari dagitiyordu.
+   Izgara kare-benzeri secilir (6 bank -> 3x2). Tuvalin bir alan siniri var
+   (Chrome'da ~268 Mpx), o yuzden sayfa o sinirin altina dusene kadar hucre
+   olcegi kisilir ve ne kadar kisildigi durum satirinda soylenir. */
 async function exportStills(){
   fullQuality();
   const {w:bw,h:bh}=outSize(), sc=parseInt($("#p_scale").value,10);
-  const w=bw*sc,h=bh*sc, {list,seg}=timeline();
+  const {list,seg}=timeline();
   if(!list.length){status("no active banks",2);return;}
   setBusy(true);
-  const c=cv(w,h), x=c.getContext("2d",{willReadFrequently:true});
-  for(let i=0;i<list.length;i++){
-    status("still "+(i+1)+"/"+list.length+" — "+list[i].name+" @ "+w+"×"+h,1);
+  const n=list.length;
+  const cols=Math.ceil(Math.sqrt(n)), rows=Math.ceil(n/cols);
+  const GAP=Math.max(4,Math.round(bw*sc*0.012));
+  const MAXA=110e6;                              // guvenli tuval alani
+  let k=1, tw=bw*sc, th=bh*sc;
+  const area=()=>(cols*tw+(cols+1)*GAP)*(rows*th+(rows+1)*GAP);
+  while(area()>MAXA && tw>200){ k*=0.8; tw=Math.round(bw*sc*k); th=Math.round(bh*sc*k); }
+  const SW=cols*tw+(cols+1)*GAP, SH=rows*th+(rows+1)*GAP;
+  const sheet=cv(SW,SH), shx=sheet.getContext("2d");
+  shx.fillStyle="#000"; shx.fillRect(0,0,SW,SH);
+  const c=cv(tw,th), x=c.getContext("2d",{willReadFrequently:true});
+  for(let i=0;i<n;i++){
+    status("sheet "+(i+1)+"/"+n+" — "+list[i].name+" @ "+tw+"×"+th,1);
     await new Promise(r=>setTimeout(r,30));
-    renderFrame(x,w,h,i*seg+seg*0.5);           // segmentin tam ortası
-    const blob=await new Promise(r=>c.toBlob(r,"image/png"));
-    dl(blob,"NYTA_"+String(i+1).padStart(2,"0")+"_"+list[i].id+"_"+w+"x"+h+".png");
-    await new Promise(r=>setTimeout(r,450));    // tarayıcı indirme kuyruğu
+    renderFrame(x,tw,th,i*seg+seg*0.5);          // segmentin tam ortasi
+    shx.drawImage(c, GAP+(i%cols)*(tw+GAP), GAP+Math.floor(i/cols)*(th+GAP));
   }
-  status(list.length+" stills saved @ "+w+"×"+h);
+  status("writing sheet "+SW+"×"+SH+"…",1);
+  await new Promise(r=>setTimeout(r,30));
+  const blob=await new Promise(r=>sheet.toBlob(r,"image/png"));
+  if(!blob){ status("sheet too large for this browser — lower still scale",2); setBusy(false); return; }
+  dl(blob,"NYTA_SHEET_"+n+"_"+SW+"x"+SH+"_"+Date.now()+".png");
+  status("sheet saved — "+n+" banks, "+SW+"×"+SH
+    +(k<1?" (cell "+Math.round(k*100)+"% to fit canvas limit)":""));
   setBusy(false);
 }
 async function exportShot(){
