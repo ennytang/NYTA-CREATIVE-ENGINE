@@ -118,6 +118,12 @@ body.rec #frame{border-color:var(--pri);box-shadow:inset 0 0 0 1px var(--pri),in
 .grp>h4 code{color:var(--dim);font-size:9px;letter-spacing:.1em}
 .grp>h4::before{content:"";width:3px;height:10px;background:var(--pri);flex:0 0 3px}
 
+.sysbtn{background:#1a060b;border:1px solid var(--rib);color:var(--dim);
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;padding:3px 8px;
+  cursor:pointer;border-radius:0;width:auto;transition:.12s}
+.sysbtn:hover{border-color:var(--pri);color:var(--pri)}
+.sysbtn.pri{background:var(--pri);border-color:var(--pri);color:#0a0205;font-weight:700}
+
 /* ── kontroller ──────────────────────────────────────────────────────────── */
 .row{display:flex;align-items:center;gap:7px;margin:4px 0}
 .row.na{opacity:.32}
@@ -281,6 +287,7 @@ button.pri:hover:not(:disabled){background:var(--pri);color:#000;box-shadow:0 0 
   input[type=checkbox]:checked::after{inset:5px}
   .grp>h4{padding:9px}
   #topbar{font-size:9px}
+  .sysbtn{font-size:9px;padding:3px 6px}
 }
 </style>
 </head>
@@ -307,6 +314,11 @@ button.pri:hover:not(:disabled){background:var(--pri);color:#000;box-shadow:0 0 
     <span class="sp"></span>
     <span class="tel"><b>MODE</b><span id="t_mode">STBY</span></span>
     <span class="tel"><b>UNDO</b><span id="t_undo">0</span></span>
+    <!-- Sifirlama butonu SISTEM CUBUGUNDA: ilk denememde PRESETS grubuna
+         koymustum, o grup varsayilan olarak kapali oldugu icin buton hic
+         gorunmuyordu. Burada durum gostergelerinin yaninda, her zaman ulasilir
+         ve UNDO'nun hemen yaninda oldugu icin geri alinabilirligi de belli. -->
+    <button id="b_reset" class="sysbtn" title="return every control to its factory value — image and presets untouched">&#10226; DEFAULTS</button>
     <span class="tel"><b>FRM</b><span id="t_frame">00000</span></span>
     <span class="tel"><b>RND</b><span id="t_fps">--</span>fps</span>
     <span class="tel"><b>SES</b><span id="t_elapsed">00:00:00</span></span>
@@ -2655,6 +2667,12 @@ function applyState(st){
 
 /* ── geri alma yigini ──────────────────────────────────────────────────── */
 const HMAX=60;
+/* FABRIKA DURUMU — burada yakalanmali.
+   Bu satir, restoreSession()'dan ONCE calisiyor: PIDS hala HTML'deki
+   value="" degerlerini, AESTHETICS de kaynaktaki on/amt degerlerini
+   tasiyor. Daha sonra yakalasam "varsayilan" dedigim sey kullanicinin en
+   son biraktigi ayarlar olurdu ve sifirlama hicbir ise yaramazdi. */
+const FACTORY=snapState();
 let hist=[snapState()], hi=0;
 function record(){
   if(restoring) return;
@@ -2695,6 +2713,32 @@ function paintUndo(){
   markCurrentPreset();
 }
 let flashT=null;
+/* Tum kontrolleri fabrika degerlerine dondurur. Yuklenen goruntuye,
+   preset slotlarina ve panel ac/kapa durumuna DOKUNMAZ — onlar ayar degil.
+   Geri alma yigina yazildigi icin Ctrl+Z ile donulebilir. Yanlislikla
+   basilmaya karsi iki adimli: ilk dokunus silahlandirir, ikincisi uygular. */
+let resetArmed=0;
+function resetDefaults(){
+  const btn=$("#b_reset");
+  if(!resetArmed){
+    resetArmed=1;
+    if(btn){ btn.textContent="⟲ CONFIRM RESET"; btn.classList.add("pri"); }
+    clearTimeout(resetDefaults._t);
+    resetDefaults._t=setTimeout(()=>{ resetArmed=0;
+      if(btn){ btn.textContent="⟲ RESET DEFAULTS"; btn.classList.remove("pri"); } },2600);
+    flash("tap again to reset all settings",2);
+    return;
+  }
+  resetArmed=0;
+  clearTimeout(resetDefaults._t);
+  if(btn){ btn.textContent="⟲ RESET DEFAULTS"; btn.classList.remove("pri"); }
+  applyState(FACTORY);
+  S.surSig=""; S.neoSig="";              // katman onbelleklerini gecersiz kil
+  S.cmap=null; S.vdSig=null;
+  record(); saveSession();
+  flash("settings reset to defaults — undo with Ctrl+Z",1);
+}
+
 function flash(msg,lvl){
   status(msg,lvl);
   clearTimeout(flashT);
@@ -2833,6 +2877,11 @@ paintPresets(); paintUndo();
 /* Yuklenen dosyanin tarihi: tarayici eski bir kopyayi onbellekten verirse
    burasi guncel dosyanin tarihini GOSTERMEZ, boylece fark hemen anlasilir. */
 {const e=$("#r_build"); if(e) e.textContent=document.lastModified;}
+/* Baglama resetDefaults ile AYNI kapsamda olmali: dosyada ikinci bir kapanis
+   var (preset + geri alma) ve fonksiyon onun icinde; disaridan gorunmuyor.
+   Ilk denememde disarida baglamistim ve sayfa "resetDefaults is not defined"
+   ile aciliyordu. */
+{const e=$("#b_reset"); if(e) e.onclick=resetDefaults;}
 restoreSession();
 if(!lsOK) flash("warning: settings and presets cannot persist here",2);
 console.log("[NYTA] MFD shell ready — IR night mode / undo + presets");
