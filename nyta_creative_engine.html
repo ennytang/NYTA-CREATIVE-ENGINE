@@ -474,7 +474,8 @@ button.pri:hover:not(:disabled){background:var(--pri);color:#000;box-shadow:0 0 
             <option value="1">1×</option><option value="2" selected>2×</option><option value="3">3×</option></select></div>
         <div class="btns">
           <button id="b_vid" class="pri" disabled>◉ RECORD VIDEO</button>
-          <button id="b_stills" disabled>◧ SHEET ×<span id="b_stills_n">06</span> (1 PNG)</button>
+          <button id="b_stills" disabled>⬒ EXPORT ×<span id="b_stills_n">06</span> PNG</button>
+          <button id="b_dir" title="hedef klasoru sec — ARTWORKS\NYTA_RTWORK">◎ FOLDER</button>
           <button id="b_shot" disabled>⬓ GRAB FRAME</button>
         </div>
       </div>
@@ -2432,39 +2433,100 @@ async function exportVideo(){
    Izgara kare-benzeri secilir (6 bank -> 3x2). Tuvalin bir alan siniri var
    (Chrome'da ~268 Mpx), o yuzden sayfa o sinirin altina dusene kadar hucre
    olcegi kisilir ve ne kadar kisildigi durum satirinda soylenir. */
+/* ---- Hedef klasor: File System Access API ----------------------------------
+   Sayfa file:// uzerinden acilsa da Chrome burayi guvenli baglam sayiyor,
+   bu yuzden showDirectoryPicker kullanilabiliyor. Indirme baglantisiyla
+   (a.download) alt klasore yazmak MUMKUN DEGIL — Chrome ad icindeki "/"
+   karakterini temizliyor — o yuzden numarali klasor mantigi ancak bir dizin
+   tutamaci ile kurulabiliyor. Tutamac IndexedDB'de saklaniyor: klasor bir kez
+   seciliyor, sonraki exportlarda tekrar sorulmuyor. */
+const FSDB="nyta_fs", FSKEY="dir";
+function fsIdb(put){
+  return new Promise(res=>{
+    let rq; try{ rq=indexedDB.open(FSDB,1); }catch(e){ return res(null); }
+    rq.onupgradeneeded=()=>{ try{ rq.result.createObjectStore("h"); }catch(e){} };
+    rq.onsuccess=()=>{ try{
+        const tx=rq.result.transaction("h",put?"readwrite":"readonly"), st=tx.objectStore("h");
+        if(put){ st.put(put,FSKEY); tx.oncomplete=()=>res(true); tx.onerror=()=>res(null); }
+        else { const g=st.get(FSKEY); g.onsuccess=()=>res(g.result||null); g.onerror=()=>res(null); }
+      }catch(e){ res(null); } };
+    rq.onerror=()=>res(null);
+  });
+}
+async function fsPerm(h){
+  if(!h||!h.queryPermission) return false;
+  const o={mode:"readwrite"};
+  try{
+    if(await h.queryPermission(o)==="granted") return true;
+    return await h.requestPermission(o)==="granted";
+  }catch(e){ return false; }
+}
+/* Tutamac acilista bir kez okunup S.fsRoot'a aliniyor. Boylece export
+   tiklamasinda showDirectoryPicker'a kadar hicbir await beklemiyor —
+   Chrome'un gecici kullanici etkinligi penceresi kacmasin diye. */
+async function pickRoot(force){
+  if(!window.showDirectoryPicker) return null;
+  if(!force && S.fsRoot && await fsPerm(S.fsRoot)) return S.fsRoot;
+  try{
+    const h=await window.showDirectoryPicker({id:"nyta_artwork",mode:"readwrite",startIn:"desktop"});
+    S.fsRoot=h; fsIdb(h); return h;
+  }catch(e){ return null; }               // kullanici iptal etti
+}
+/* Sonraki bos NYTA_#### klasoru. Sayac localStorage'da ama guvenilir kaynak
+   diskin kendisi: var olan klasorlerin uzerinden atliyoruz, boylece klasorler
+   disardan silinse ya da elle olusturulsa da hicbir sey uzerine yazilmiyor. */
+async function nextShotDir(root){
+  let i=Math.max(0,parseInt(localStorage.getItem("nyta_seq")||"0",10)||0);
+  for(let guard=0;guard<10000;guard++,i++){
+    const nm="NYTA_"+String(i).padStart(4,"0");
+    let taken=true;
+    try{ await root.getDirectoryHandle(nm); }catch(e){ taken=false; }
+    if(!taken){
+      localStorage.setItem("nyta_seq",String(i+1));
+      return {dir:await root.getDirectoryHandle(nm,{create:true}), name:nm};
+    }
+  }
+  return null;
+}
+async function fsWrite(dir,name,blob){
+  const fh=await dir.getFileHandle(name,{create:true});
+  const ws=await fh.createWritable();
+  await ws.write(blob); await ws.close();
+}
+function slug(t){return t.replace(/[^A-Za-z0-9]+/g,"-").replace(/^-+|-+$/g,"").toUpperCase();}
+
 async function exportStills(){
+  /* Artik tek bir kontak sayfasi uretilmiyor. Her bank kendi PNG'si olarak,
+     her exportta bir artan numarali klasorun icine yaziliyor:
+     ...\ARTWORKS\NYTA_RTWORK\NYTA_0000\NYTA_0000_1_DEPTH-SCAN.png
+     Bir sonraki export NYTA_0001 klasorunu aciyor. Klasor secilemezse
+     (tarayici desteklemiyor ya da kullanici iptal etti) ayni adlarla tek tek
+     indirmeye dusuluyor, boylece buton her durumda is goruyor. */
   fullQuality();
   const {w:bw,h:bh}=outSize(), sc=parseInt($("#p_scale").value,10);
   const {list,seg}=timeline();
   if(!list.length){status("no active banks",2);return;}
+  const w=bw*sc, h=bh*sc, n=list.length;
+  const root=await pickRoot(false);
   setBusy(true);
-  const n=list.length;
-  /* Izgara: satir sayisi karekokun TABANI, sutun ondan turetilir. Ustunu
-     alinca 7 karo 3x3'e dusup iki hucre bos kaliyordu; boyle 4x2 oluyor.
-     6 karo icin sonuc yine 3x2, yani eski davranis degismiyor. */
-  const rows=Math.max(1,Math.floor(Math.sqrt(n))), cols=Math.ceil(n/rows);
-  const GAP=Math.max(4,Math.round(bw*sc*0.012));
-  const MAXA=110e6;                              // guvenli tuval alani
-  let k=1, tw=bw*sc, th=bh*sc;
-  const area=()=>(cols*tw+(cols+1)*GAP)*(rows*th+(rows+1)*GAP);
-  while(area()>MAXA && tw>200){ k*=0.8; tw=Math.round(bw*sc*k); th=Math.round(bh*sc*k); }
-  const SW=cols*tw+(cols+1)*GAP, SH=rows*th+(rows+1)*GAP;
-  const sheet=cv(SW,SH), shx=sheet.getContext("2d");
-  shx.fillStyle="#000"; shx.fillRect(0,0,SW,SH);
-  const c=cv(tw,th), x=c.getContext("2d",{willReadFrequently:true});
+  let tgt=root?await nextShotDir(root):null;
+  if(!tgt) status("hedef klasor yok — tek tek indiriliyor (FOLDER ile sec)",2);
+  const tag=tgt?tgt.name:"NYTA_"+Date.now();
+  const c=cv(w,h), x=c.getContext("2d",{willReadFrequently:true});
   for(let i=0;i<n;i++){
-    status("sheet "+(i+1)+"/"+n+" — "+list[i].name+" @ "+tw+"×"+th,1);
+    status(tag+" → "+(i+1)+"/"+n+" "+list[i].name+" @ "+w+"×"+h,1);
     await new Promise(r=>setTimeout(r,30));
-    renderFrame(x,tw,th,i*seg+seg*0.5);          // segmentin tam ortasi
-    shx.drawImage(c, GAP+(i%cols)*(tw+GAP), GAP+Math.floor(i/cols)*(th+GAP));
+    renderFrame(x,w,h,i*seg+seg*0.5);          // segmentin tam ortasi
+    const blob=await new Promise(r=>c.toBlob(r,"image/png"));
+    if(!blob){ status("PNG yazilamadi — still scale'i dusur",2); setBusy(false); return; }
+    const fn=tag+"_"+(i+1)+"_"+slug(list[i].name)+".png";
+    try{
+      if(tgt) await fsWrite(tgt.dir,fn,blob); else dl(blob,fn);
+    }catch(e){
+      status("yazma hatasi: "+(e&&e.message?e.message:e),2); setBusy(false); return;
+    }
   }
-  status("writing sheet "+SW+"×"+SH+"…",1);
-  await new Promise(r=>setTimeout(r,30));
-  const blob=await new Promise(r=>sheet.toBlob(r,"image/png"));
-  if(!blob){ status("sheet too large for this browser — lower still scale",2); setBusy(false); return; }
-  dl(blob,"NYTA_SHEET_"+n+"_"+SW+"x"+SH+"_"+Date.now()+".png");
-  status("sheet saved — "+n+" banks, "+SW+"×"+SH
-    +(k<1?" (cell "+Math.round(k*100)+"% to fit canvas limit)":""));
+  status((tgt?tgt.name+" — ":"")+n+" PNG "+(tgt?"yazildi":"indirildi")+" @ "+w+"×"+h);
   setBusy(false);
 }
 async function exportShot(){
@@ -2686,6 +2748,16 @@ $("#b_play").onclick=()=>{S.playing=!S.playing;$("#b_play").textContent=S.playin
 $("#b_stop").onclick=()=>{S.playing=false;S.t=0;$("#b_play").textContent="▶ RUN";draw();};
 $("#b_vid").onclick=exportVideo;
 $("#b_stills").onclick=exportStills;
+$("#b_dir").onclick=async()=>{
+  if(!window.showDirectoryPicker){ status("bu tarayici klasor secimini desteklemiyor",2); return; }
+  const h=await pickRoot(true);
+  status(h?("hedef klasor: "+h.name+" — sonraki export NYTA_"
+        +String(Math.max(0,parseInt(localStorage.getItem("nyta_seq")||"0",10)||0)).padStart(4,"0"))
+        :"klasor secilmedi",h?0:2);
+};
+/* Tutamaci acilista al: boylece ilk exportta yalnizca izin dogrulamasi
+   kaliyor, yeniden secim istenmiyor. */
+fsIdb().then(h=>{ if(h) S.fsRoot=h; });
 $("#b_shot").onclick=exportShot;
 $("#tl").addEventListener("click",e=>{
   if(e.target.id!=="tl") return;
