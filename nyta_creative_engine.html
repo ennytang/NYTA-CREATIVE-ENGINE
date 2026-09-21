@@ -366,6 +366,22 @@ button.pri:hover:not(:disabled){background:var(--pri);color:#000;box-shadow:0 0 
       </div>
 
       <div class="grp">
+        <h4><em>NEON EDGE</em><code>NEO-07</code></h4>
+        <div class="row"><label>neon edges</label><input type="checkbox" id="p_neon" checked></div>
+        <div class="row"><label>contrast threshold</label><input type="range" id="p_neonth" min="0.04" max="0.50" step="0.01" value="0.18"><output></output></div>
+        <div class="row"><label>neon intensity</label><input type="range" id="p_neonint" min="0" max="1" step="0.02" value="0.80"><output></output></div>
+        <div class="row"><label>line thickness</label><input type="range" id="p_neonw" min="0.2" max="2" step="0.05" value="1.00"><output></output></div>
+        <div class="row"><label>glitch</label><input type="range" id="p_neongl" min="0" max="1" step="0.02" value="0.30"><output></output></div>
+      </div>
+
+      <div class="grp">
+        <h4><em>SURROUND</em><code>SUR-08</code></h4>
+        <div class="row"><label>echo smear</label><input type="range" id="p_surecho" min="0" max="1" step="0.02" value="0.45"><output></output></div>
+        <div class="row"><label>light rays</label><input type="range" id="p_surrays" min="0" max="1" step="0.02" value="0.85"><output></output></div>
+        <div class="row"><label>long spikes</label><input type="range" id="p_surspikes" min="0" max="1" step="0.02" value="0.70"><output></output></div>
+      </div>
+
+      <div class="grp">
         <h4><em>AESTHETIC BANKS</em><code>BNK-06</code></h4>
         <div id="aelist"></div>
       </div>
@@ -416,13 +432,14 @@ button.pri:hover:not(:disabled){background:var(--pri);color:#000;box-shadow:0 0 
 
       <div class="grp">
         <h4><em>SEQUENCE</em><code>SEQ-03</code></h4>
-        <div class="row"><label>segment (s)</label><input type="range" id="p_seg" min="1" max="6" step="0.25" value="2.5"><output></output></div>
-        <div class="row"><label>crossfade (s)</label><input type="range" id="p_xf" min="0" max="1.2" step="0.05" value="0.4"><output></output></div>
-        <div class="row"><label>fps</label><select id="p_fps" style="flex:1.35"><option>24</option><option selected>30</option><option>60</option></select></div>
         <div class="row"><label>speed</label><select id="p_speed" style="flex:1.35">
           <option value="1" selected>1× — real time</option>
           <option value="2">2×</option><option value="4">4×</option>
           <option value="8">8×</option><option value="16">16×</option></select></div>
+        <div class="row"><label>duration (s)</label><input type="range" id="p_dur" min="3" max="60" step="0.5" value="15"><output></output></div>
+        <div class="row"><label>crossfade %</label><input type="range" id="p_xfpct" min="0" max="45" step="1" value="16"><output></output></div>
+        <div class="read" id="r_seqcalc" style="margin:2px 0 6px"><b>TIMING</b><span>—</span></div>
+        <div class="row"><label>fps</label><select id="p_fps" style="flex:1.35"><option>24</option><option selected>30</option><option>60</option></select></div>
         <div class="row"><label>seed</label><input type="number" id="p_seed" value="7331" style="flex:1.35"></div>
         <div class="row"><label>title card</label><input type="checkbox" id="p_title"></div>
       </div>
@@ -517,12 +534,14 @@ function fmt(s){const m=Math.floor(s/60),x=Math.floor(s%60);return String(m).pad
    TECH NOIR'de HUD rengi bankin kendi tonunu TEKRAR ETMEMELI: goruntu fosfor
    yesiline boyandigi icin yesil bir kutu goruntunun icinde eriyordu. Gece
    gorusu ekipmaninin klasik ikilisi alindi — yesil goruntu, kehribar
-   telemetri. */
+   telemetri.
+   AEROCHROME kirmizi-siyaha boyandigi icin buz mavisi HUD orada da ayrisiyor;
+   bank degisince rengi degistirmeye gerek kalmadi. */
 const AESTHETICS=[
  /* id "cool" olarak KALIYOR: kayitli oturumlar ve preset slotlari banklari
     id ile bulur, degistirsem eski kayitlar bu banki bulamaz. Gorunen ad ve
     efekt krom aynaya cevrildi. */
- {id:"cool",   name:"CHROME MIRROR",      sub:"convex mirror / metal surface", col:"#b4e5ff", amt:0.85, on:true},
+ {id:"cool",   name:"AEROCHROME",         sub:"infrared film / false colour",  col:"#b4e5ff", amt:0.85, on:true},
  {id:"noir",   name:"TECH NOIR",          sub:"green phosphor night vision",     col:"#ffa31a", amt:0.90, on:true},
  {id:"horror", name:"ANALOG HORROR",      sub:"VHS breakup / tape warp",      col:"#a64dff", amt:0.85, on:true},
  {id:"mil",    name:"MILITARY REALISM",   sub:"FLIR thermal / targeting HUD",  col:"#ffb800", amt:0.90, on:true},
@@ -1053,47 +1072,47 @@ const BAYER=[0,32,8,40,2,34,10,42,48,16,56,24,50,18,58,26,12,44,4,36,14,46,6,38,
 /* -- akımlar ---------------------------------------------------------------- */
 const FX={
 
-/* ---- CHROME MIRROR: konveks ayna / metal yuzey ----
-   Katmanlarin hepsi lens cemberine kirpilir; yoksa parlama ve hotspot
-   merceğin disindaki bos alani da aydinlatir. */
+/* ---- AEROCHROME: kizilotu film / yanlis renk ----
+   Kanal karisimi oldugu icin LUT ile yapilamaz (LUT tek boyutlu, parlakliktan
+   renge gider; burada yesil kanal kirmiziya TASINIYOR). Bu yuzden piksel
+   basina bir gecis. Gercek Aerochrome'da bitki ve cilt kirmiziya, gokyuzu ve
+   beton siyana duser; asagidaki karisim o davranisi taklit eder. */
 cool:{
   still(src,w,h,a){
     const c=cv(w,h),x=c.getContext("2d",{willReadFrequently:true});
     x.drawImage(src,0,0);
-    applyLUT(c,w,h,LUT_CHROME,a);
-    // kure golgelemesi: gercek bir krom kure kenara dogru koyulasir
-    vignette(x,w,h,0.54*a);
-    // tepe parlamasi — merkezden kaydirilmis yumusak hotspot
-    x.save(); clipLens(x,w,h);
-    x.globalCompositeOperation="screen"; x.globalAlpha=0.58*a;
-    const hx=w*0.37, hy=h*0.29, hr=Math.min(w,h)*0.44;
-    const g=x.createRadialGradient(hx,hy,0,hx,hy,hr);
-    g.addColorStop(0,   "rgba(255,255,255,0.60)");
-    g.addColorStop(0.42,"rgba(202,222,248,0.15)");
-    g.addColorStop(1,   "rgba(0,0,0,0)");
-    x.fillStyle=g; x.fillRect(0,0,w,h); x.restore();
-    // metalde parlama yayilir
-    x.save(); x.globalCompositeOperation="screen"; x.globalAlpha=0.20*a;
-    x.filter="blur("+w*0.013+"px)"; x.drawImage(c,0,0); x.restore();
+    const id=x.getImageData(0,0,w,h), d=id.data;
+    for(let i=0;i<d.length;i+=4){
+      const r=d[i]/255, g=d[i+1]/255, b=d[i+2]/255;
+      const nr=Math.min(1,g*1.28+r*0.18);      // yesil -> kirmizi
+      const ng=Math.min(1,r*0.62+b*0.30);
+      const nb=Math.min(1,b*0.78+g*0.10);
+      const l=0.2126*nr+0.7152*ng+0.0722*nb, S=1.55;
+      d[i]  =255*clamp(lerp(r,l+(nr-l)*S,a),0,1);
+      d[i+1]=255*clamp(lerp(g,l+(ng-l)*S,a),0,1);
+      d[i+2]=255*clamp(lerp(b,l+(nb-l)*S,a),0,1);
+    }
+    x.putImageData(id,0,0);
+    // film halasyonu: kizilotu emulsiyonda tepe kirmizilar tasar
+    x.save(); x.globalCompositeOperation="screen"; x.globalAlpha=0.22*a;
+    x.filter="blur("+w*0.011+"px)"; x.drawImage(c,0,0); x.restore();
+    vignette(x,w,h,0.36*a);
     return c;
   },
   frame(dst,st,w,h,p){
-    dst.drawImage(st,0,0);
-    /* Isik yuzeyde yuruyor: egik, yumusak bir parlama bandi segment boyunca
-       kayar. Faz p.local'dan gelir, boylece sekans dongusuyle ayni ritimde. */
-    const t=(p.local!==undefined?p.local:(p.t%1));
-    const sweep=-0.30+1.60*t, ang=-0.42;
-    const dx=Math.cos(ang), dy=Math.sin(ang), L=Math.hypot(w,h);
-    dst.save(); clipLens(dst,w,h);
-    dst.globalCompositeOperation="screen"; dst.globalAlpha=0.32*p.a;
-    const g=dst.createLinearGradient(
-      w/2+dx*(sweep-0.20)*L, h/2+dy*(sweep-0.20)*L,
-      w/2+dx*(sweep+0.20)*L, h/2+dy*(sweep+0.20)*L);
-    g.addColorStop(0,  "rgba(0,0,0,0)");
-    g.addColorStop(0.5,"rgba(228,241,255,0.52)");
-    g.addColorStop(1,  "rgba(0,0,0,0)");
-    dst.fillStyle=g; dst.fillRect(0,0,w,h); dst.restore();
-    grain(dst,w,h,p.rnd,0.042*p.a,170);
+    const s=1+0.0030*Math.sin(p.f*0.19)*p.a;    // hafif kapi titremesi
+    dst.save();
+    dst.translate(w/2,h/2); dst.scale(s,s);
+    dst.translate(-w/2+(p.rnd()-0.5)*1.1*p.S,-h/2+(p.rnd()-0.5)*1.1*p.S);
+    dst.drawImage(st,0,0); dst.restore();
+    grain(dst,w,h,p.rnd,0.070*p.a,150);         // film taneciği
+    // seyrek kirmizi sizma
+    if(p.rnd()<0.12){
+      const g=dst.createLinearGradient(0,0,w,h);
+      g.addColorStop(0,"rgba(255,70,40,"+(0.055*p.a)+")");
+      g.addColorStop(1,"rgba(0,0,0,0)");
+      dst.save();dst.globalCompositeOperation="screen";dst.fillStyle=g;dst.fillRect(0,0,w,h);dst.restore();
+    }
   }
 },
 
@@ -1744,9 +1763,18 @@ function drawStamp(dst,w,h,S1,col,label){
    sekans 3.75 saniyede oynar ve video o uzunlukta kaydedilir. */
 function speedX(){const e=$("#p_speed");return e?(parseFloat(e.value)||1):1;}
 function activeList(){return AESTHETICS.filter(a=>a.on);}
+/* ZAMANLAMA — "duration" artik KAYDEDILEN DOSYANIN uzunlugu.
+   Motor zamani = dosya suresi x hiz, segment = o zamanin bank sayisina
+   bolunmusu. Once hiz, sonra sure: 4x hizda 8 saniyelik dosya, icinde 32
+   saniyelik bir sekans gecirir. Crossfade saniye yerine segmentin yuzdesi;
+   yoksa sureyi degistirdiginde gecislerin orani bozuluyordu. */
 function timeline(){
-  const list=activeList(), seg=P("seg");
-  return {list,seg,dur:Math.max(0.001,list.length*seg)};
+  const list=activeList();
+  const fileDur=Math.max(0.5,P("dur"));
+  const engine=fileDur*speedX();                 // motor icindeki sekans suresi
+  const n=Math.max(1,list.length);
+  const seg=engine/n;
+  return {list,seg,dur:Math.max(0.001,engine),fileDur};
 }
 /* t anında hangi akım(lar) aktif, hangi ağırlıkla */
 function mixAt(t){
@@ -1755,7 +1783,7 @@ function mixAt(t){
   const tt=((t%dur)+dur)%dur;
   const i=Math.min(list.length-1,Math.floor(tt/seg));
   const local=tt-i*seg;
-  const xf=Math.min(P("xf"),seg*0.45);
+  const xf=Math.min(seg*P("xfpct")/100,seg*0.45);
   const out=[{a:list[i],w:1,local:local/seg}];
   if(xf>0.01&&local>seg-xf&&list.length>1){
     const k=smooth((local-(seg-xf))/xf);
@@ -1798,6 +1826,12 @@ function renderFrame(dst,w,h,t){
     if(m.w>0.5) top=m;
   }
 
+  /* Sira onemli: neon goruntunun KENARLARINI okuyor, bu yuzden HUD'dan once
+     calismali — yoksa kutu cizgilerini de kenar sanip onlari da yakar.
+     Surround da kendi rengini merceğin kenarindan okuyor, o da HUD'dan once. */
+  neonEdges(dst,w,h,top.a.col,S1,f);
+  surround(dst,w,h,top.a.col);
+
   drawBoxes(dst,w,h,S1,top.a.col);
   // başlık kartı
   if($("#p_title").checked){
@@ -1820,6 +1854,239 @@ function renderFrame(dst,w,h,t){
    zamanla dalgalanan iz. Icinden gecen gauss zarfli bir darbe paketi
    soldan saga suruklenir; rengi o anki akimin temasindan gelir.
    ───────────────────────────────────────────────────────────────────────── */
+/* ───────────────────────────────────────────────────────────────────────────
+   NEON KENARLAR
+   Sobel ile egim buyuklugu cikarilir. Bir piksel şeride donusmek icin iki
+   kosulu birlikte saglamali: egim esigin uzerinde OLMALI ve piksel kendi
+   5x5 komsulugunun ortalamasindan PARLAK olmali. Ikincisi olmasa kenarin iki
+   yani da yanardi; boylece yalnizca isigin dis yuzeyi yaniyor, govde tarafi
+   karanlik kaliyor — farin cevresi neon olur, kaportasi olmaz.
+   Renk aktif bankin HUD renginden gelir, boylece kutularla ayni dilde kalir.
+   Maske lens cemberine kirpilir; surround'un kendi katmanlari var.
+   ───────────────────────────────────────────────────────────────────────── */
+function neonEdges(dst,w,h,col,S1,f){
+  if(!on("p_neon")) return;
+  const INT=P("neonint"); if(INT<=0.001) return;
+  const TH=Math.max(0.02,P("neonth")), THICK=P("neonw"), GL=P("neongl");
+  const N=Math.max(200,Math.round(w/2));
+  const rgb=hex2rgb(col);
+  const G=lensGeom(w,h);
+  /* MASKE ONBELLEGI. Maskenin girdileri bir segment boyunca sabit (taban
+     goruntu stillCache'de); yalnizca glitch kareye bagli. Bu yuzden maske ve
+     parlama katmanlari imza degisince bir kez kurulur, her karede yalnizca
+     glitch kaydirmasi ve bindirme yapilir. */
+  const sig=[S.baseKey,col,TH,THICK,N,G?lensR():0].join("|");
+  if(S.neoSig!==sig || !S.neoMk || S.neoMk.width!==N){
+    const sm=scratch("nsm",N,N), sx=sm.getContext("2d",{willReadFrequently:true});
+    sx.setTransform(1,0,0,1,0,0); sx.globalAlpha=1; sx.filter="none";
+    sx.clearRect(0,0,N,N);
+    sx.drawImage(dst.canvas,0,0,N,N);
+    const d=sx.getImageData(0,0,N,N).data;
+    const L=new Float32Array(N*N);
+    for(let p=0,q=0;p<d.length;p+=4,q++)
+      L[q]=(0.2126*d[p]+0.7152*d[p+1]+0.0722*d[p+2])/255;
+    // integral goruntu: yerel ortalama 25 okuma yerine 4 okuma
+    const II=new Float32Array((N+1)*(N+1));
+    for(let y=0;y<N;y++){ let row=0;
+      for(let x=0;x<N;x++){ row+=L[y*N+x]; II[(y+1)*(N+1)+x+1]=II[y*(N+1)+x+1]+row; } }
+    if(!S.neoMk || S.neoMk.width!==N) S.neoMk=cv(N,N);
+    const mk=S.neoMk, mx=mk.getContext("2d",{willReadFrequently:true});
+    const mi=mx.createImageData(N,N), md=mi.data;
+    const ncx=N/2, ncy=N/2, nrad=G?G.rad*(N/w):1e9;
+    for(let y=2;y<N-2;y++)for(let x=2;x<N-2;x++){
+      if(G && Math.hypot(x-ncx,y-ncy)>nrad*0.995) continue;
+      const q=y*N+x;
+      const gx=(L[q-N+1]+2*L[q+1]+L[q+N+1])-(L[q-N-1]+2*L[q-1]+L[q+N-1]);
+      const gy=(L[q+N-1]+2*L[q+N]+L[q+N+1])-(L[q-N-1]+2*L[q-N]+L[q-N+1]);
+      const g=Math.hypot(gx,gy)/4;
+      if(g<TH) continue;
+      const m=(II[(y+3)*(N+1)+x+3]-II[(y-2)*(N+1)+x+3]
+              -II[(y+3)*(N+1)+x-2]+II[(y-2)*(N+1)+x-2])/25;
+      if(L[q]<m+0.02) continue;                  // govde tarafini atla
+      const al=Math.min(1,(g-TH)/Math.max(0.02,TH*1.4));
+      const i4=q*4;
+      md[i4]=rgb[0]; md[i4+1]=rgb[1]; md[i4+2]=rgb[2]; md[i4+3]=255*al;
+    }
+    mx.setTransform(1,0,0,1,0,0); mx.globalAlpha=1; mx.filter="none";
+    mx.globalCompositeOperation="source-over";
+    mx.putImageData(mi,0,0);
+    /* Parlama KUCUK olcekte bulaniklastirilir, sonra buyutulur. Ilk surumde
+       1080'lik hedefte 17 piksel bulanik iki gecis vardi; maliyet hedef
+       piksel sayisiyla olculdugu icin en pahali adim oydu. */
+    const k=N/w;
+    S.neoB1=S.neoB1&&S.neoB1.width===N?S.neoB1:cv(N,N);
+    S.neoB2=S.neoB2&&S.neoB2.width===N?S.neoB2:cv(N,N);
+    for(const [cvs,rad] of [[S.neoB1,THICK*0.016*w*k],[S.neoB2,THICK*0.005*w*k]]){
+      const c2=cvs.getContext("2d");
+      c2.setTransform(1,0,0,1,0,0); c2.globalAlpha=1;
+      c2.globalCompositeOperation="source-over";
+      c2.clearRect(0,0,N,N);
+      c2.filter=rad>0.2?("blur("+rad+"px)"):"none";
+      c2.drawImage(mk,0,0);
+      c2.filter="none";
+    }
+    S.neoSig=sig;
+  }
+  // ── her karede: glitch + bindirme ──
+  let src=S.neoMk;
+  if(GL>0.001){
+    const tmp=scratch("ntm",N,N), tx=tmp.getContext("2d");
+    tx.setTransform(1,0,0,1,0,0); tx.globalAlpha=1; tx.filter="none";
+    tx.globalCompositeOperation="source-over";
+    tx.clearRect(0,0,N,N);
+    const rnd=mulberry32(((parseInt($("#p_seed").value,10)||0)*2654435761 ^ (f*97))|0);
+    let y=0;
+    while(y<N){
+      const bh=Math.max(1,Math.round(1+rnd()*N*0.05));
+      const off=(rnd()<0.35*GL)?(rnd()-0.5)*N*0.09*GL:0;
+      tx.drawImage(S.neoMk,0,y,N,bh, off,y,N,bh);
+      y+=bh;
+    }
+    src=tmp;
+  }
+  dst.save();
+  if(G){ dst.beginPath(); dst.arc(G.cx,G.cy,G.rad,0,Math.PI*2); dst.clip(); }
+  dst.globalCompositeOperation="screen"; dst.filter="none";
+  dst.globalAlpha=Math.min(1,0.55*INT); dst.drawImage(S.neoB1,0,0,w,h);
+  dst.globalAlpha=Math.min(1,0.85*INT); dst.drawImage(S.neoB2,0,0,w,h);
+  dst.globalAlpha=Math.min(1,1.00*INT); dst.drawImage(src,0,0,w,h);
+  if(GL>0.001){                                   // RGB ayrismasi
+    dst.globalAlpha=0.5*INT*GL;
+    const off=w*0.004*GL;
+    dst.drawImage(src, off,0,w,h);
+    dst.drawImage(src,-off,0,w,h);
+  }
+  dst.globalAlpha=1;
+  dst.globalCompositeOperation="source-over";
+  dst.restore();
+}
+function hex2rgb(c){const n=parseInt(c.slice(1),16);return [n>>16&255,n>>8&255,n&255];}
+
+/* ───────────────────────────────────────────────────────────────────────────
+   SURROUND — cemberin disi
+   Uc katman, ucu de r > R bolgesine kirpili:
+     ECHO   mercek icerigi radyal olarak disa suruklenir (goruntuden beslenir,
+            bu yuzden kendiliginden hareket eder)
+     RAYS   ince isik izleri; her izin rengi o ACIDAKI kenardan okunur, yani
+            cam kenarindaki neyi varsa onun devamini disa tasir. Karanlik bir
+            kenar hic savurmaz. Konumlar seed'den turetilir, sabittir —
+            kareden kareye oynasa video kayniyor gibi gorunur.
+     SPIKES ayni mantik, az sayida ama cok uzun ve kalin isin
+   ───────────────────────────────────────────────────────────────────────── */
+/* Surround her karede yeniden kurulmaz.
+   Ilk surumde kuruluyordu ve 1080'de 100 fps'i 4.4 fps'e dusurdu: kare
+   basina 1270 gradyan nesnesi, tam tuval getImageData'si ve bes bulanik
+   olcekli drawImage. Oysa katmanin girdileri bir segment boyunca sabit —
+   taban goruntu stillCache'de, isin konumlari seed'den. Bu yuzden imza
+   (taban anahtari + bank + kaydiraclar + seed + olcu) degisince bir kez
+   kurulup onbellege alinir, sonraki karelerde tek drawImage ile biner. */
+function surround(dst,w,h,col){
+  const G=lensGeom(w,h); if(!G) return;
+  const ECHO=P("surecho"), RAYS=P("surrays"), SPK=P("surspikes");
+  if(ECHO<=0.001&&RAYS<=0.001&&SPK<=0.001) return;
+  const sig=[S.baseKey,col,ECHO,RAYS,SPK,$("#p_seed").value,w,h,lensR(),
+             P("lensfill"),lensMode()].join("|");
+  if(S.surSig===sig && S.surCv){
+    dst.save();
+    dst.globalCompositeOperation="screen";
+    dst.drawImage(S.surCv,0,0);
+    dst.globalCompositeOperation="source-over";
+    dst.restore();
+    return;
+  }
+  const cx=G.cx, cy=G.cy, rad=G.rad;
+  /* Katman kendi tuvaline kurulur; dst'ye yalnizca sonunda tek seferde biner
+     ve onbellege alinir. */
+  if(!S.surCv || S.surCv.width!==w || S.surCv.height!==h) S.surCv=cv(w,h);
+  const lay=S.surCv, ly=lay.getContext("2d",{willReadFrequently:true});
+  ly.setTransform(1,0,0,1,0,0);
+  ly.globalAlpha=1; ly.filter="none"; ly.globalCompositeOperation="source-over";
+  ly.clearRect(0,0,w,h);
+  const clipOut=(ctx)=>{ ctx.beginPath(); ctx.rect(0,0,w,h);
+    ctx.arc(cx,cy,rad,0,Math.PI*2,true); ctx.clip(); };
+
+  if(ECHO>0.001){
+    /* Radyal sonumlemeden gecirilir: ilk surumde dogrudan screen ediliyordu
+       ve parlak banklarda sizma kadrajin kosesine kadar gidiyordu. Isik
+       sizmasi mesafeyle soner; maske bunu zorunlu kilar. Bulanik gecis sayisi
+       besten uce indirildi, en pahali adim o. */
+    const ec=scratch("sech",w,h), ex=ec.getContext("2d");
+    ex.setTransform(1,0,0,1,0,0);
+    ex.globalAlpha=1; ex.filter="none"; ex.globalCompositeOperation="source-over";
+    ex.clearRect(0,0,w,h);
+    for(let i=1;i<=3;i++){
+      const sc=1+i*(0.20*ECHO);
+      ex.globalAlpha=Math.min(1,(0.22*ECHO)/Math.sqrt(i));
+      ex.filter="blur("+(w*0.008*i)+"px) saturate(0.70) brightness(0.55)";
+      ex.drawImage(dst.canvas, cx-cx*sc, cy-cy*sc, w*sc, h*sc);
+      ex.globalCompositeOperation="lighter";
+    }
+    ex.filter="none"; ex.globalAlpha=1;
+    ex.globalCompositeOperation="destination-in";
+    const mg=ex.createRadialGradient(cx,cy,rad*0.99,cx,cy,rad*1.75);
+    mg.addColorStop(0,"rgba(0,0,0,1)");
+    mg.addColorStop(0.45,"rgba(0,0,0,0.42)");
+    mg.addColorStop(1,"rgba(0,0,0,0)");
+    ex.fillStyle=mg; ex.fillRect(0,0,w,h);
+    ex.globalCompositeOperation="source-over";
+    ly.save(); clipOut(ly); ly.drawImage(ec,0,0); ly.restore();
+  }
+
+  if(RAYS>0.001||SPK>0.001){
+    /* Kenar rengi tablosu: aci basina bir kez hesaplanir. Ilk surumde her
+       isin icin 15 piksel ornekliyordu; 1270 isinla bu kare basina 19 bin
+       okuma demekti. 512 dilimlik tablo ayni sonucu veriyor. */
+    const snap=dst.getImageData(0,0,w,h).data;
+    const NA=512, TBL=new Float32Array(NA*4);
+    for(let t=0;t<NA;t++){
+      const a=t/NA*Math.PI*2;
+      let r=0,g=0,b=0,n=0;
+      for(const fr of [0.93,0.96,0.985]){
+        const x=Math.round(cx+Math.cos(a)*rad*fr), y=Math.round(cy+Math.sin(a)*rad*fr);
+        if(x<0||y<0||x>=w||y>=h) continue;
+        const i=(y*w+x)*4; r+=snap[i];g+=snap[i+1];b+=snap[i+2];n++;
+      }
+      if(n){ r/=n;g/=n;b/=n; }
+      TBL[t*4]=r; TBL[t*4+1]=g; TBL[t*4+2]=b;
+      TBL[t*4+3]=(0.2126*r+0.7152*g+0.0722*b)/255;
+    }
+    const draw=(n,lenMax,widthK,gain,seedOff)=>{
+      if(gain<=0.001||n<1) return;
+      const rnd=mulberry32((((parseInt($("#p_seed").value,10)||0)*7919)^seedOff)|0);
+      ly.save(); clipOut(ly); ly.globalCompositeOperation="lighter";
+      for(let k=0;k<n;k++){
+        const a=rnd()*Math.PI*2;
+        const ti=((a/(Math.PI*2)*NA)|0)%NA, o=ti*4;
+        const lum=TBL[o+3];
+        if(lum<0.03) continue;
+        const boost=0.35+lum*2.0;
+        const len=rad*(0.03+Math.pow(rnd(),2.0)*lenMax)*(0.30+lum*1.8);
+        const r0=rad*(1.003+rnd()*0.015);
+        const wd=Math.max(0.7,w/1800*widthK*(0.4+rnd()*2.6));
+        const al=Math.min(0.85,(0.06+Math.pow(rnd(),1.7)*0.45)*boost*gain);
+        const cs=Math.cos(a), sn=Math.sin(a);
+        const gx=ly.createLinearGradient(cx+cs*r0,cy+sn*r0,cx+cs*(r0+len),cy+sn*(r0+len));
+        const R=Math.round(TBL[o]), G2=Math.round(TBL[o+1]), B=Math.round(TBL[o+2]);
+        const rgba=(v)=>"rgba("+R+","+G2+","+B+","+v+")";
+        gx.addColorStop(0,rgba(al)); gx.addColorStop(0.35,rgba(al*0.45)); gx.addColorStop(1,rgba(0));
+        ly.strokeStyle=gx; ly.lineWidth=wd;
+        ly.beginPath(); ly.moveTo(cx+cs*r0,cy+sn*r0); ly.lineTo(cx+cs*(r0+len),cy+sn*(r0+len));
+        ly.stroke();
+      }
+      ly.restore();
+    };
+    draw(Math.round(900*RAYS), 0.95, 1.2, RAYS*1.10, 0x51d3);
+    draw(Math.round(60*SPK),   1.60, 2.8, SPK *1.25, 0x9a17);
+  }
+
+  S.surSig=sig;
+  dst.save();
+  dst.globalCompositeOperation="screen";
+  dst.drawImage(lay,0,0);
+  dst.globalCompositeOperation="source-over";
+  dst.restore();
+}
+
 function radarTrace(dst,x,y,w,h,t,col,S1){
   const mid=y+h/2, N=42, phase=(t*0.55)%1.35-0.18;
   dst.save();
@@ -2159,7 +2426,7 @@ document.querySelectorAll('.mfd input[type=range]').forEach(r=>{
   upd();
   r.addEventListener("input",()=>{upd();
     if(r.id&&r.id.startsWith("p_")){S.draft=true;S.baseKey="";S.stillCache.clear();}
-    if(r.id==="p_seg"||r.id==="p_xf") buildTL();
+    if(r.id==="p_dur"||r.id==="p_xfpct") buildTL();
     scheduleDraw();});
   r.addEventListener("change",()=>{upd();    // birakildi: tam cozunurluk
     if(r.id&&r.id.startsWith("p_")){S.draft=false;S.baseKey="";S.stillCache.clear();}
@@ -2180,7 +2447,7 @@ function lensUI(){
 ["p_res","p_fit"].forEach(id=>{const e=$("#"+id); if(e) e.onchange=()=>{
   S.baseKey="";S.stillCache.clear();applyRes();draw();};});
 {const e=$("#p_speed"); if(e) e.onchange=draw;}
-["p_boxes","p_labels","p_stamp","p_title","p_minsz","p_partsz","p_id","p_fps","p_fxtext"].forEach(id=>{
+["p_boxes","p_labels","p_stamp","p_title","p_minsz","p_partsz","p_id","p_fps","p_fxtext","p_neon"].forEach(id=>{
   const e=$("#"+id); if(e) e.addEventListener("input",draw), e.addEventListener("change",draw);
 });
 /* base'i yeniden hesaplatmasi gerekenler: mercek, kumlama ve seed (kum deseni) */
@@ -2299,6 +2566,14 @@ function readouts(){
   $("#r_still").textContent = (o.w*sc)+"×"+(o.h*sc);
   $("#r_banks").textContent = pad(list.length,2)+"/"+pad(AESTHETICS.length,2);
   $("#r_dur").textContent   = dur.toFixed(2)+"s";
+  /* Canli zamanlama okumasi: dosya = sekans / hiz iliskisini gizlemeden
+     gosterir, yoksa "8 saniye yazdim ama 32 saniye oynuyor" sasirtici olur. */
+  {const q=$("#r_seqcalc"); if(q){
+    const {fileDur,seg}=timeline();
+    q.querySelector("span").textContent =
+      fileDur.toFixed(1)+"s file = "+dur.toFixed(1)+"s seq = "
+      +list.length+" \u00d7 "+seg.toFixed(2)+"s @ "+speedX()+"\u00d7";
+  }}
   $("#r_trk").textContent   = pad(trk,2)+"/"+pad(S.dets.length,2);
   $("#r_det").textContent   = $("#p_det").value==="coco"?"COCO-SSD":"LUM-BLOB";
   const bn=$("#b_stills_n"); if(bn) bn.textContent=pad(list.length,2);
@@ -2346,7 +2621,9 @@ const PIDS=["p_falloff","p_floor","p_spread","p_halo","p_con","p_crush","p_fx","
   "p_lensr","p_lensmode","p_lensfill","p_lensrim","p_lensw","p_outdesat","p_outgrain",
   "p_grain","p_grainamt","p_grainsz","p_graincon",
   "p_boxes","p_det","p_minsz","p_partsz","p_labels","p_stamp","p_id","p_fxtext",
-  "p_seg","p_xf","p_fps","p_seed","p_title","p_res","p_fit","p_scale","p_speed","p_crt"];
+  "p_neon","p_neonth","p_neonint","p_neonw","p_neongl",
+  "p_surecho","p_surrays","p_surspikes",
+  "p_dur","p_xfpct","p_fps","p_seed","p_title","p_res","p_fit","p_scale","p_speed","p_crt"];
 
 function snapState(){
   const o={v:{},a:AESTHETICS.map(x=>({id:x.id,on:x.on,amt:x.amt}))};
