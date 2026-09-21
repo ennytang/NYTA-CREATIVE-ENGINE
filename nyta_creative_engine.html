@@ -1076,10 +1076,17 @@ function makeLUT(fn){const t=new Float32Array(768);
    govde 139 dereceye — gercek tup fosforuna — oturuyor, ve tepe terimi
    parlak cekirdegi beyaza yaklastiriyor. */
 const LUT_PHOS=makeLUT(l=>{
-  const v=Math.pow(l,1.85), hi=Math.pow(v,4.0);
-  return[clamp(v*0.10+hi*0.70,0,1),
-         clamp(v*1.22+hi*0.18,0,1),
-         clamp(v*0.22+hi*0.62,0,1)];});
+  /* Gamma dogrusal (v=l) tutuldu. 1'in altinda (0.78) golgeler kalkiyor ve
+     kadraj yesile yikaniyordu; 1.85'te ise tam tersi oldu — golgeler ezildi,
+     ic dairede medyan parlaklik 4.0'a, siyah pay %74.7'ye cikti. Dogrusal
+     rampa siyahi sifirda birakiyor ama hicbir ara tonu asagi cekmiyor:
+     medyan 11.3, p90 57.3, siyah pay %51. Yesil katsayisi one cikarilip
+     mavi payi kisildigi icin ton 115 dereceye — mavi-yesilden cok yesile —
+     oturuyor. */
+  const v=l, hi=Math.pow(v,4.0);
+  return[clamp(v*0.08+hi*0.55,0,1),
+         clamp(v*1.32+hi*0.16,0,1),
+         clamp(v*0.16+hi*0.44,0,1)];});
 const LUT_FLIR=makeLUT(l=>{ // ironbow
   const s=[[0,0,0.10],[0.22,0.02,0.36],[0.55,0.10,0.34],[0.85,0.35,0.10],[1,0.78,0.15],[1,1,0.90]];
   const p=l*(s.length-1),i=Math.min(s.length-2,Math.floor(p)),f=p-i;
@@ -1171,26 +1178,42 @@ scan:{
       const ox=(p.rnd()-0.5)*w*0.06*p.a;
       dst.drawImage(st,0,by,w,bh, ox,by,w,bh);
     }
-    /* Kirmizi sacaklanma: cyan'i hue-rotate ile kirmiziya cevirip kaydirarak
-       bindiriyoruz. Kanali ayri ayri isletmekten cok daha ucuz ve referanstaki
-       kenar cizgisiyle ayni sonucu veriyor. */
+    /* Kromatik sacaklanma. Onceki surum hue-rotate'li bir kopyayi sol %7.5'lik
+       seride kirpip 0.60 alfayla screen ediyordu; bu iki sorun uretiyordu:
+       serit sinirinda sert bir dikey ek izi kaliyor, ve renk kaymasi
+       yalnizca kadrajin sol tarafinda olusuyordu — saga dogru hicbir karsiligi
+       yoktu. Simdi sacak gercekten konturlardan uretiliyor: kaydirilmis
+       kopyanin parlakligindan yerel parlakligi cikariyoruz, boylece duz
+       alanlarda deger sifir (siyah, screen'de etkisiz) ve yalnizca kenarlarda
+       kirmizi kaliyor. Katman bir kez hesaplanip still tuvaline asiliyor,
+       kare basina yalnizca tek drawImage dusuyor — hue-rotate filtresi
+       kalktigi icin bu bankin fps maliyeti de artmiyor. */
     {
-      /* Ilk surumde bu kaydirma TUM kareyi 0.34 alfayla screen ediyordu:
-         cyan uzerine magenta screen = beyaz, kare doygunlugu 0.70'ten 0.27'ye
-         dusuyordu. Referanstaki kirmizi ince bir KENAR cizgisi, tam kare
-         hayaleti degil — o yuzden artik sol kenar seridine kirpili, geri
-         kalanda yalnizca cok hafif bir iz kaliyor. */
-      const off=w*0.006*(0.6+p.rnd()*0.8)*p.a;
+      if(!st._fr){
+        const fo=Math.max(1,Math.round(w*0.006));
+        const fc=document.createElement("canvas"); fc.width=w; fc.height=h;
+        const fx=fc.getContext("2d",{willReadFrequently:true});
+        fx.drawImage(st,0,0);
+        const ad=fx.getImageData(0,0,w,h).data;
+        const B=new Uint8ClampedArray(ad.length);
+        for(let y=0;y<h;y++){
+          const row=y*w*4;
+          for(let x2=0;x2<w;x2++){
+            const i=row+x2*4;
+            const j=row+(x2-fo<0?0:x2-fo)*4;
+            const dv=(ad[j]+ad[j+1]+ad[j+2])-(ad[i]+ad[i+1]+ad[i+2]);
+            const e=dv>0?dv/3:0;
+            B[i]=e; B[i+1]=e*0.10; B[i+2]=e*0.16; B[i+3]=255;
+          }
+        }
+        fx.putImageData(new ImageData(B,w,h),0,0);
+        st._fr=fc;
+      }
       dst.save();
-      dst.beginPath(); dst.rect(0,0,w*0.075,h); dst.clip();
-      dst.globalCompositeOperation="screen"; dst.globalAlpha=0.60*p.a;
-      dst.filter="hue-rotate(165deg) saturate(2.4)";
-      dst.drawImage(st,-off,0);
-      dst.filter="none"; dst.restore();
-      /* Ikinci, tum kareyi kaplayan hafif iz cikarildi: 1080'de hue-rotate
-         filtresi hedef piksel sayisiyla olculuyor ve bu bank tek basina
-         80 fps'i 41'e dusuruyordu. Katkisi zaten gorunur degildi; kenar
-         seridi kadrajin %7.5'i oldugu icin ucuz kaliyor. */
+      dst.globalCompositeOperation="screen";
+      dst.globalAlpha=0.72*p.a;
+      dst.drawImage(st._fr,(p.rnd()-0.5)*w*0.0025*p.a,0);
+      dst.restore();
     }
     /* Yuruyen tarama bandi — fazi segmentin kendi ilerleyisinden aliyor,
        boylece her segmentte bir kez tepeden asagi geciyor. */
@@ -1315,9 +1338,9 @@ noir:{
     const c=cv(w,h),x=c.getContext("2d",{willReadFrequently:true});
     x.drawImage(src,0,0);
     applyLUT(c,w,h,LUT_PHOS,a);
-    x.save();x.globalCompositeOperation="screen";x.globalAlpha=0.26*a;
+    x.save();x.globalCompositeOperation="screen";x.globalAlpha=0.30*a;
     x.filter="blur("+w*0.008+"px)";x.drawImage(c,0,0);x.restore();
-    vignette(x,w,h,0.66*a);
+    vignette(x,w,h,0.52*a);
     return c;
   },
   frame(dst,st,w,h,p){
@@ -1334,7 +1357,7 @@ noir:{
     dst.save();dst.globalCompositeOperation="screen";
     /* Parlaklik nefesi kisildi: tum kareyi yesile screen ediyor, yani yeni
        derin siyahlari geri acan tek sey o. */
-    dst.fillStyle="rgba(50,255,150,"+(0.010+0.009*Math.sin(p.f*0.4))*p.a+")";
+    dst.fillStyle="rgba(60,255,140,"+(0.016+0.010*Math.sin(p.f*0.4))*p.a+")";
     dst.fillRect(0,0,w,h);dst.restore();
   }
 },
