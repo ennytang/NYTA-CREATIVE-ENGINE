@@ -394,7 +394,7 @@ button.pri:hover:not(:disabled){background:var(--pri);color:#000;box-shadow:0 0 
       </div>
 
       <div class="grp">
-        <h4><em>AESTHETIC BANKS</em><code>BNK-06</code></h4>
+        <h4><em>AESTHETIC BANKS</em><code>BNK-07</code></h4>
         <div id="aelist"></div>
       </div>
     </aside>
@@ -553,6 +553,12 @@ const AESTHETICS=[
  /* id "cool" olarak KALIYOR: kayitli oturumlar ve preset slotlari banklari
     id ile bulur, degistirsem eski kayitlar bu banki bulamaz. Gorunen ad ve
     efekt krom aynaya cevrildi. */
+ /* Sekansin BASI. Camgobegi, kirmizinin tam tamamlayicisi: ilk kesme
+    (DEPTH SCAN -> AEROCHROME) setteki en sert gecis oluyor. TECH NOIR'in
+    yesiline komsu olmamasi da bilincli, en yakin ton o. HUD rengi magenta,
+    cunku goruntunun kendisi cyan ve ayni renkte bir kutu icinde erir —
+    TECH NOIR'da yasadigimiz hata. */
+ {id:"scan",   name:"DEPTH SCAN",        sub:"structured light / cyan phosphor", col:"#ff2bd6", amt:0.88, on:true},
  {id:"cool",   name:"AEROCHROME",         sub:"infrared film / false colour",  col:"#b4e5ff", amt:0.85, on:true},
  {id:"noir",   name:"TECH NOIR",          sub:"green phosphor night vision",     col:"#ffa31a", amt:0.90, on:true},
  {id:"horror", name:"ANALOG HORROR",      sub:"VHS breakup / tape warp",      col:"#a64dff", amt:0.85, on:true},
@@ -1083,6 +1089,124 @@ const BAYER=[0,32,8,40,2,34,10,42,48,16,56,24,50,18,58,26,12,44,4,36,14,46,6,38,
 
 /* -- akımlar ---------------------------------------------------------------- */
 const FX={
+
+/* ---- DEPTH SCAN: yapilandirilmis isik / camgobegi fosfor ----
+   Referanstaki doku film greni DEGIL, duzenli bir tarama dokusu: nokta
+   matrisi artı siki yatay bantlar, yapilar kontur olarak parliyor. Bu yuzden
+   gren yerine BRUTALISM icin duran 8x8 Bayer matrisi daha ince adimda ve
+   cyan palette yeniden kullaniliyor — rastgele gurultu o matbaa hissini
+   vermiyor. Kontur, merkezi fark ile alinan egimden geliyor: kenarlar
+   aydinlanirken ic dolgu karanlik kaliyor, tel kafes okumasi bundan. */
+scan:{
+  still(src,w,h,a){
+    const c=cv(w,h),x=c.getContext("2d",{willReadFrequently:true});
+    x.drawImage(src,0,0);
+    const id=x.getImageData(0,0,w,h), d=id.data;
+    const L=new Float32Array(w*h);
+    for(let i=0,j=0;i<d.length;i+=4,j++)
+      L[j]=(0.2126*d[i]+0.7152*d[i+1]+0.0722*d[i+2])/255;
+    const S1=w/1280;
+    const pitch=Math.max(2,Math.round(3.2*S1));      // tarama bandi araligi
+    const LV=6;                                      // dither seviye sayisi
+    for(let y=0;y<h;y++){
+      const yb=(y&7)*8;
+      const up=(y>0?-w:0), dn=(y<h-1?w:0);
+      for(let x2=0;x2<w;x2++){
+        const j=y*w+x2, i=j*4;
+        const lft=(x2>0?-1:0), rgt=(x2<w-1?1:0);
+        // kontur: merkezi fark, iki eksende
+        const gx=L[j+rgt]-L[j+lft], gy=L[j+dn]-L[j+up];
+        const g=Math.abs(gx)+Math.abs(gy);
+        /* Kazanclar dusuk tutuldu: ilk ayarda v cok kolay 1'e doyuyordu,
+           dither kuantalamasi da pikselleri ust seviyeye itince tepe terimi
+           her yerde tetiklenip kare gri-beyaz kaliyordu (doygunluk 0.20). */
+        let v=Math.min(1,L[j]*0.68+g*1.95);          // konturu one al
+        v=Math.pow(v,0.92);
+        // duzenli dither: Bayer esigi ile seviyelere indir
+        const bay=BAYER[yb+(x2&7)]/64;
+        v=Math.min(1,Math.max(0,Math.floor(v*LV+bay)/LV));
+        // camgobegi rampasi; tepeler soluk mavi-beyaza cikar
+        /* Beyaz yalnizca en tepede: pow 8 ile diz cok daraltildi, kirmizi
+           tabani da dusuruldu. Kirmizi sifira yakin kalinca yesil-mavi ikilisi
+           gercek camgobegini veriyor. */
+        const hi=Math.pow(v,8.0);
+        let nr=v*0.05+hi*0.52;
+        let ng=Math.min(1,v*0.92+hi*0.20);
+        let nb=Math.min(1,v*1.12+hi*0.14+0.02);
+        // tarama bantlari
+        if(y%pitch===0){ nr*=0.42; ng*=0.42; nb*=0.48; }
+        d[i]  =255*clamp(lerp(L[j],nr,a),0,1);
+        d[i+1]=255*clamp(lerp(L[j],ng,a),0,1);
+        d[i+2]=255*clamp(lerp(L[j],nb,a),0,1);
+      }
+    }
+    x.putImageData(id,0,0);
+    // fosfor yayilmasi
+    x.save(); x.globalCompositeOperation="screen"; x.globalAlpha=0.22*a;
+    x.filter="blur("+w*0.006+"px)"; x.drawImage(c,0,0); x.restore();
+    vignette(x,w,h,0.54*a);
+    return c;
+  },
+  frame(dst,st,w,h,p){
+    dst.drawImage(st,0,0);
+    const S1=p.S;
+    /* Yatay dilim kaymasi */
+    const n=2+Math.floor(p.rnd()*3);
+    for(let k=0;k<n;k++){
+      if(p.rnd()>0.55*p.a) continue;
+      const by=Math.floor(p.rnd()*h), bh=Math.max(2,p.rnd()*h*0.055);
+      const ox=(p.rnd()-0.5)*w*0.06*p.a;
+      dst.drawImage(st,0,by,w,bh, ox,by,w,bh);
+    }
+    /* Kirmizi sacaklanma: cyan'i hue-rotate ile kirmiziya cevirip kaydirarak
+       bindiriyoruz. Kanali ayri ayri isletmekten cok daha ucuz ve referanstaki
+       kenar cizgisiyle ayni sonucu veriyor. */
+    {
+      /* Ilk surumde bu kaydirma TUM kareyi 0.34 alfayla screen ediyordu:
+         cyan uzerine magenta screen = beyaz, kare doygunlugu 0.70'ten 0.27'ye
+         dusuyordu. Referanstaki kirmizi ince bir KENAR cizgisi, tam kare
+         hayaleti degil — o yuzden artik sol kenar seridine kirpili, geri
+         kalanda yalnizca cok hafif bir iz kaliyor. */
+      const off=w*0.006*(0.6+p.rnd()*0.8)*p.a;
+      dst.save();
+      dst.beginPath(); dst.rect(0,0,w*0.075,h); dst.clip();
+      dst.globalCompositeOperation="screen"; dst.globalAlpha=0.60*p.a;
+      dst.filter="hue-rotate(165deg) saturate(2.4)";
+      dst.drawImage(st,-off,0);
+      dst.filter="none"; dst.restore();
+      /* Ikinci, tum kareyi kaplayan hafif iz cikarildi: 1080'de hue-rotate
+         filtresi hedef piksel sayisiyla olculuyor ve bu bank tek basina
+         80 fps'i 41'e dusuruyordu. Katkisi zaten gorunur degildi; kenar
+         seridi kadrajin %7.5'i oldugu icin ucuz kaliyor. */
+    }
+    /* Yuruyen tarama bandi — fazi segmentin kendi ilerleyisinden aliyor,
+       boylece her segmentte bir kez tepeden asagi geciyor. */
+    {
+      const lp=(p.local!==undefined?p.local:(p.t%1));
+      const by=(lp*1.25-0.12)*h, bh=Math.max(6,h*0.075);
+      if(by>-bh&&by<h){
+        const gr=dst.createLinearGradient(0,by,0,by+bh);
+        gr.addColorStop(0,"rgba(0,0,0,0)");
+        gr.addColorStop(0.5,"rgba(150,245,255,"+(0.26*p.a)+")");
+        gr.addColorStop(1,"rgba(0,0,0,0)");
+        dst.save(); dst.globalCompositeOperation="screen";
+        dst.fillStyle=gr; dst.fillRect(0,by,w,bh); dst.restore();
+      }
+    }
+    /* Seyrek blok dusmeleri */
+    if(p.rnd()<0.30*p.a){
+      dst.save(); dst.globalAlpha=0.85;
+      for(let k=0;k<2;k++){
+        const bw2=w*(0.05+p.rnd()*0.22), bh2=h*(0.01+p.rnd()*0.035);
+        dst.fillStyle="#000";
+        dst.fillRect(p.rnd()*(w-bw2), p.rnd()*(h-bh2), bw2, bh2);
+      }
+      dst.restore();
+    }
+    scanlines(dst,w,h,S1,0.16*p.a,3);
+    grain(dst,w,h,p.rnd,0.035*p.a,150);
+  }
+},
 
 /* ---- AEROCHROME: kizilotu film / yanlis renk ----
    Kanal karisimi oldugu icin LUT ile yapilamaz (LUT tek boyutlu, parlakliktan
@@ -2277,7 +2401,10 @@ async function exportStills(){
   if(!list.length){status("no active banks",2);return;}
   setBusy(true);
   const n=list.length;
-  const cols=Math.ceil(Math.sqrt(n)), rows=Math.ceil(n/cols);
+  /* Izgara: satir sayisi karekokun TABANI, sutun ondan turetilir. Ustunu
+     alinca 7 karo 3x3'e dusup iki hucre bos kaliyordu; boyle 4x2 oluyor.
+     6 karo icin sonuc yine 3x2, yani eski davranis degismiyor. */
+  const rows=Math.max(1,Math.floor(Math.sqrt(n))), cols=Math.ceil(n/rows);
   const GAP=Math.max(4,Math.round(bw*sc*0.012));
   const MAXA=110e6;                              // guvenli tuval alani
   let k=1, tw=bw*sc, th=bh*sc;
@@ -2552,8 +2679,8 @@ console.log("[NYTA] engine ready");
    ═════════════════════════════════════════════════════════════════════════ */
 (function(){
 "use strict";
-const BANK=["BNK-01","BNK-02","BNK-03","BNK-04","BNK-05","BNK-06"];
-const CODE={cool:"EC",noir:"TN",horror:"AH",mil:"MR",glitch:"GA",brutal:"BD"};
+const BANK=["BNK-01","BNK-02","BNK-03","BNK-04","BNK-05","BNK-06","BNK-07"];
+const CODE={scan:"DS",cool:"EC",noir:"TN",horror:"AH",mil:"MR",glitch:"GA",brutal:"BD"};
 
 /* ── boot sekansı ────────────────────────────────────────────────────────── */
 const boot=document.getElementById("boot");
