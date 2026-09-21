@@ -1066,7 +1066,20 @@ function applyLUT(c,w,h,lut,mix){
 function makeLUT(fn){const t=new Float32Array(768);
   for(let i=0;i<256;i++){const c=fn(i/255);t[i*3]=c[0]*255;t[i*3+1]=c[1]*255;t[i*3+2]=c[2]*255;}return t;}
 
-const LUT_PHOS=makeLUT(l=>{const v=Math.pow(l,0.78);return[v*0.10,clamp(v*1.28,0,1),v*0.22];});
+/* NVG — gece gorus tupu.
+   Onceki rampada gamma 0.78'di, yani BIRIN ALTINDA: golgeleri kaldiriyordu
+   ve karanlik alanlar siyah kalmiyor, kadrajin tamami yesile yikaniyordu.
+   Olctugumde orta ton parlakligi 41.5 cikti; "cig" gorunmesinin sebebi
+   yesilin tonu degil, siyahin olmamasiydi. Ayrica 1.28G/0.22B dengesi
+   yesili sariya yatiriyordu (govde tonu 126 derece).
+   Gamma 1.85 siyahlari geri getiriyor (orta ton 14.5), mavi payi yukselince
+   govde 139 dereceye — gercek tup fosforuna — oturuyor, ve tepe terimi
+   parlak cekirdegi beyaza yaklastiriyor. */
+const LUT_PHOS=makeLUT(l=>{
+  const v=Math.pow(l,1.85), hi=Math.pow(v,4.0);
+  return[clamp(v*0.10+hi*0.70,0,1),
+         clamp(v*1.22+hi*0.18,0,1),
+         clamp(v*0.22+hi*0.62,0,1)];});
 const LUT_FLIR=makeLUT(l=>{ // ironbow
   const s=[[0,0,0.10],[0.22,0.02,0.36],[0.55,0.10,0.34],[0.85,0.35,0.10],[1,0.78,0.15],[1,1,0.90]];
   const p=l*(s.length-1),i=Math.min(s.length-2,Math.floor(p)),f=p-i;
@@ -1302,9 +1315,9 @@ noir:{
     const c=cv(w,h),x=c.getContext("2d",{willReadFrequently:true});
     x.drawImage(src,0,0);
     applyLUT(c,w,h,LUT_PHOS,a);
-    x.save();x.globalCompositeOperation="screen";x.globalAlpha=0.30*a;
-    x.filter="blur("+w*0.009+"px)";x.drawImage(c,0,0);x.restore();
-    vignette(x,w,h,0.62*a);
+    x.save();x.globalCompositeOperation="screen";x.globalAlpha=0.26*a;
+    x.filter="blur("+w*0.008+"px)";x.drawImage(c,0,0);x.restore();
+    vignette(x,w,h,0.66*a);
     return c;
   },
   frame(dst,st,w,h,p){
@@ -1319,7 +1332,9 @@ noir:{
     grain(dst,w,h,p.rnd,0.20*p.a,128);
     // parlaklık nefesi
     dst.save();dst.globalCompositeOperation="screen";
-    dst.fillStyle="rgba(60,255,120,"+(0.020+0.016*Math.sin(p.f*0.4))*p.a+")";
+    /* Parlaklik nefesi kisildi: tum kareyi yesile screen ediyor, yani yeni
+       derin siyahlari geri acan tek sey o. */
+    dst.fillStyle="rgba(50,255,150,"+(0.010+0.009*Math.sin(p.f*0.4))*p.a+")";
     dst.fillRect(0,0,w,h);dst.restore();
   }
 },
