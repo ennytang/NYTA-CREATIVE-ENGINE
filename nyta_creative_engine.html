@@ -1093,22 +1093,66 @@ cool:{
   still(src,w,h,a){
     const c=cv(w,h),x=c.getContext("2d",{willReadFrequently:true});
     x.drawImage(src,0,0);
+    /* Tepe cekirdegi icin BULANIK bir kopya. Ilk denememde diz dogrudan
+       pikselin kendi degerine bakiyordu ve kaynaktaki tanecik esigi gecince
+       govde tuz-biber beyaza donuyordu. Bulanik haritadan surulunce diz
+       bolgeye tepki veriyor, tek piksele degil. */
+    const bw2=Math.max(48,Math.round(w/4)), bh2=Math.max(48,Math.round(h/4));
+    const bc=cv(bw2,bh2), bx=bc.getContext("2d",{willReadFrequently:true});
+    bx.filter="blur("+Math.max(1,bw2*0.012)+"px)";
+    bx.drawImage(src,0,0,bw2,bh2);
+    bx.filter="none";
+    const bd=bx.getImageData(0,0,bw2,bh2).data;
     const id=x.getImageData(0,0,w,h), d=id.data;
-    for(let i=0;i<d.length;i+=4){
-      const r=d[i]/255, g=d[i+1]/255, b=d[i+2]/255;
-      const nr=Math.min(1,g*1.28+r*0.18);      // yesil -> kirmizi
-      const ng=Math.min(1,r*0.62+b*0.30);
-      const nb=Math.min(1,b*0.78+g*0.10);
-      const l=0.2126*nr+0.7152*ng+0.0722*nb, S=1.55;
-      d[i]  =255*clamp(lerp(r,l+(nr-l)*S,a),0,1);
-      d[i+1]=255*clamp(lerp(g,l+(ng-l)*S,a),0,1);
-      d[i+2]=255*clamp(lerp(b,l+(nb-l)*S,a),0,1);
+    for(let y=0;y<h;y++){
+      const by=Math.min(bh2-1,(y*bh2/h)|0);
+      for(let x2=0;x2<w;x2++){
+        const i=(y*w+x2)*4;
+        const r=d[i]/255, g=d[i+1]/255, b=d[i+2]/255;
+        /* ir: kizilotu parlaklik vekili. Yesil kanal, IR'de guclu yansiyan
+           yuzeylerin (bitki, cilt) en iyi gostergesi. */
+        const ir0=Math.min(1,g*1.30+r*0.20);
+        /* SIYAN sinyali govdeden ONCE hesaplanir: siyan bir bolge tanimi
+           geregi IR-aktif DEGIL, o yuzden kirmiziyi sonradan bastirmak yerine
+           ir'nin kendisini sonduruyoruz. Sonradan bastirdigimda gokyuzu
+           lavanta kaliyordu, cunku govde kirmizisi zaten yuksek uretiliyordu.
+           Elimizdeki tek ayirt edici sinyal MAVININ YESILE gore baskinligi. */
+        const lum0=0.2126*r+0.7152*g+0.0722*b;
+        const cy=clamp((b-g)*2.0+(lum0-ir0*0.78)*0.55,0,1);
+        const ir=ir0*(1-cy*0.95);
+        /* SECICI: gamma>1 golgeleri asagi ceker, boylece kirmizi isigin
+           degdigi yuzeyde toplanir. 1.45 denedim, orta tonlari tamamen
+           siyaha indirdi ve goruntunun govdesi kayboldu; 1.18 seciciligi
+           koruyup govdeyi birakiyor. */
+        const t=Math.pow(ir,1.18);
+        /* GOVDE: mavi yesilden FAZLA (ton ~358 derece) — kan kirmizisi.
+           Onceki karisim mavinin cogunu koruyordu, R+B pembe veriyordu;
+           maviyi yesilin ALTINA dusurmek de turuncuya kaydiriyor. */
+        let nr=Math.min(1,t*1.22);
+        let ng=Math.pow(t,3.8)*0.13;
+        let nb=Math.pow(t,2.8)*0.26;
+        /* TEPE CEKIRDEGI: yalnizca gercekten parlak bir BOLGE beyaza patlar,
+           cevresi kirmizi hale kalir. */
+        const jb=(by*bw2+Math.min(bw2-1,(x2*bw2/w)|0))*4;
+        const bl=(0.2126*bd[jb]+0.7152*bd[jb+1]+0.0722*bd[jb+2])/255;
+        const hi=clamp((bl-0.80)/0.20,0,1), hw=hi*hi*hi;
+        ng=Math.min(1,ng+hw*0.92);
+        nb=Math.min(1,nb+hw*0.88);
+        /* Siyan govdesi: yesil ve mavi birlikte kalkar, kirmizi zaten
+           sondurulmus durumda. */
+        ng=Math.min(1,ng+cy*0.92);
+        nb=Math.min(1,nb+cy*0.88);
+        nr=Math.max(0,nr*(1-cy*0.55));
+        d[i]  =255*clamp(lerp(r,nr,a),0,1);
+        d[i+1]=255*clamp(lerp(g,ng,a),0,1);
+        d[i+2]=255*clamp(lerp(b,nb,a),0,1);
+      }
     }
     x.putImageData(id,0,0);
     // film halasyonu: kizilotu emulsiyonda tepe kirmizilar tasar
-    x.save(); x.globalCompositeOperation="screen"; x.globalAlpha=0.22*a;
+    x.save(); x.globalCompositeOperation="screen"; x.globalAlpha=0.20*a;
     x.filter="blur("+w*0.011+"px)"; x.drawImage(c,0,0); x.restore();
-    vignette(x,w,h,0.36*a);
+    vignette(x,w,h,0.40*a);
     return c;
   },
   frame(dst,st,w,h,p){
