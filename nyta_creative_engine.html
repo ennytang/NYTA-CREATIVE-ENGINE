@@ -486,8 +486,11 @@ button.pri:hover:not(:disabled){background:var(--pri);color:#000;box-shadow:0 0 
         <div class="pio">
           <button id="p_exp" title="export presets as JSON to the OUTPUT folder">⭳ JSON</button>
           <button id="p_imp" title="import presets from a JSON file">&#11041; IMPORT</button>
+          <button id="s_exp" title="save every current setting as a JSON file">&#11015; SETTINGS</button>
+          <button id="s_imp" title="load a settings JSON and return to that exact look">&#11014; LOAD</button>
         </div>
         <input type="file" id="p_impf" accept="application/json,.json" hidden>
+        <input type="file" id="s_impf" accept="application/json,.json" hidden>
       </div>
 
       <div class="grp">
@@ -2961,7 +2964,14 @@ async function exportStills(){
       status("yazma hatasi: "+(e&&e.message?e.message:e),2); setBusy(false); return;
     }
   }
-  status((tgt?tgt.name+" — ":"")+n+" PNG "+(tgt?"yazildi":"indirildi")+" @ "+w+"×"+h);
+  /* Ayarlari PNG'lerin yanina yaz. Bir export'un hangi ayarlarla
+     uretildigini sonradan bulmanin baska yolu yok: PNG ustveri tasimiyor ve
+     oturum yalnizca localStorage'da, ilk degisiklikte uzerine yaziliyor. */
+  try{
+    const sb=window.NYTA_settings?window.NYTA_settings.blob():null;
+    if(sb){ if(tgt) await fsWrite(tgt.dir,tag+"_settings.json",sb); else dl(sb,tag+"_settings.json"); }
+  }catch(e){ /* ayar yazilamazsa PNG'ler yine de tamam */ }
+  status((tgt?tgt.name+" — ":"")+n+" PNG + ayarlar "+(tgt?"yazildi":"indirildi")+" @ "+w+"×"+h);
   setBusy(false);
 }
 async function exportShot(){
@@ -3590,6 +3600,47 @@ $("#p_impf").onchange=ev=>{
   rd.readAsText(f);
   ev.target.value="";
 };
+
+/* ═══ AYAR DOSYASI ═══════════════════════════════════════════════════════
+   Presetler tarayicinin localStorage'inda yasiyor; profil silinir ya da
+   uzerine yazilirsa gidiyorlar. Bir export'un ayarlarini geri getirmek
+   isteyince elimde yalnizca PNG'ler kaliyordu ve canvas.toBlob PNG'ye
+   hicbir ustveri yazmiyor — ayar oradan okunamiyor. Bu yuzden snapState
+   ciktisi artik dosyaya da yazilabiliyor ve geri yuklenebiliyor. */
+function settingsBlob(){
+  return new Blob([JSON.stringify(
+    {app:"NYTA",kind:"settings",v:1,ts:Date.now(),state:snapState()},null,1)],
+    {type:"application/json"});
+}
+function applySettingsJSON(txt){
+  const j=JSON.parse(txt);
+  /* Hem {state:{v,a}} hem dogrudan {v,a} kabul ediliyor: ilkini bu buton
+     yaziyor, ikincisi bir preset govdesi ya da elle cikarilmis bir kayit
+     olabilir. */
+  const st=(j&&j.state&&j.state.v)?j.state:(j&&j.v?j:null);
+  if(!st||!st.v) throw new Error("beklenen bicim degil");
+  record();                        // geri alinabilir olsun
+  applyState(st);
+  saveSession();
+  const n=(st.a||[]).length;
+  return n;
+}
+$("#s_exp").onclick=()=>{
+  dl(settingsBlob(),"NYTA_settings_"+Date.now()+".json");
+  flash("settings saved as JSON",1);
+};
+$("#s_imp").onclick=()=>$("#s_impf").click();
+$("#s_impf").onchange=ev=>{
+  const f=ev.target.files[0]; if(!f) return;
+  const rd=new FileReader();
+  rd.onload=()=>{
+    try{ flash("settings loaded ("+applySettingsJSON(rd.result)+" banks) — undo with Ctrl+Z",1); }
+    catch(err){ flash("could not read settings file: "+err.message,2); }
+  };
+  rd.readAsText(f);
+  ev.target.value="";
+};
+window.NYTA_settings={blob:settingsBlob,apply:applySettingsJSON};
 
 paintPresets(); paintUndo();
 /* Yuklenen dosyanin tarihi: tarayici eski bir kopyayi onbellekten verirse
