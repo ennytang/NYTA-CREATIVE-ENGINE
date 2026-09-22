@@ -448,7 +448,7 @@ button.pri:hover:not(:disabled){background:var(--pri);color:#000;box-shadow:0 0 
           <option value="1" selected>1× — real time</option>
           <option value="2">2×</option><option value="4">4×</option>
           <option value="8">8×</option><option value="16">16×</option></select></div>
-        <div class="row"><label>duration (s)</label><input type="range" id="p_dur" min="3" max="60" step="0.5" value="15"><output></output></div>
+        <div class="row"><label>duration (s)</label><input type="range" id="p_dur" min="3" max="60" step="0.5" value="24"><output></output></div>
         <div class="row"><label>crossfade %</label><input type="range" id="p_xfpct" min="0" max="45" step="1" value="16"><output></output></div>
         <div class="read" id="r_seqcalc" style="margin:2px 0 6px"><b>TIMING</b><span>—</span></div>
         <div class="row"><label>fps</label><select id="p_fps" style="flex:1.35"><option>24</option><option selected>30</option><option>60</option></select></div>
@@ -550,22 +550,33 @@ function fmt(s){const m=Math.floor(s/60),x=Math.floor(s%60);return String(m).pad
    telemetri.
    AEROCHROME kirmizi-siyaha boyandigi icin buz mavisi HUD orada da ayrisiyor;
    bank degisince rengi degistirmeye gerek kalmadi. */
+/* SIRA OLCUMLE KURULDU. Her bankin still() ciktisi tek basina render edilip
+   lens dairesi icinde doygun pikseller uzerinden AGIRLIKLI DAIRESEL ORTALAMA
+   ile govde tonu, ayrica zemin parlakligi medyani olculdu:
+     scan 195  cool 2  noir 122  mil 310  glitch 95  plate 189  bprint 215
+     feedback 171 | horror kroma 0.20 (notr)  brutal kroma 0.00 (akromatik)
+   Olcum iki onyargimi duzeltti: MILITARY'nin govdesi kehribar degil
+   mor-magenta (310), GLITCH'in govdesi magenta degil yesil (95), HORROR ise
+   renkli degil neredeyse notr. Sira bu gercek degerlere gore kuruldu.
+   Kural 1: on bankin dordu camgobegi-mavi ailesinde (169-215) — scan, plate,
+   bprint, feedback. Bunlar asla komsu olmuyor; 1, 5, 7 ve 9. siralara
+   dagitildi (dongu kapanisi dahil hicbir ikisi yan yana degil).
+   Kural 2: iki akromatik/notr bank (horror, brutal) damak temizleyici olarak
+   kullanildi — 8. ve 10. sira.
+   Kural 3: scan->cool acilisi korundu; 195 ile 2 arasindaki 167 derece
+   setteki en sert kesme ve bu bilincli bir karardi.
+   Elde edilen en kucuk komsu ton mesafesi 94 derece (plate->glitch). */
 const AESTHETICS=[
- /* id "cool" olarak KALIYOR: kayitli oturumlar ve preset slotlari banklari
-    id ile bulur, degistirsem eski kayitlar bu banki bulamaz. Gorunen ad ve
-    efekt krom aynaya cevrildi. */
- /* Sekansin BASI. Camgobegi, kirmizinin tam tamamlayicisi: ilk kesme
-    (DEPTH SCAN -> AEROCHROME) setteki en sert gecis oluyor. TECH NOIR'in
-    yesiline komsu olmamasi da bilincli, en yakin ton o. HUD rengi magenta,
-    cunku goruntunun kendisi cyan ve ayni renkte bir kutu icinde erir —
-    TECH NOIR'da yasadigimiz hata. */
- {id:"scan",   name:"DEPTH SCAN",        sub:"structured light / cyan phosphor", col:"#ff2bd6", amt:0.88, on:true},
- {id:"cool",   name:"AEROCHROME",         sub:"infrared film / false colour",  col:"#b4e5ff", amt:0.85, on:true},
- {id:"noir",   name:"TECH NOIR",          sub:"green phosphor night vision",     col:"#ffa31a", amt:0.90, on:true},
- {id:"horror", name:"ANALOG HORROR",      sub:"VHS breakup / tape warp",      col:"#a64dff", amt:0.85, on:true},
- {id:"mil",    name:"MILITARY REALISM",   sub:"FLIR thermal / targeting HUD",  col:"#ffb800", amt:0.90, on:true},
- {id:"glitch", name:"GLITCH ART",         sub:"slice + channel split",         col:"#ff3da3", amt:0.80, on:true},
- {id:"brutal", name:"BRUTALISM DIGITAL",  sub:"1-bit dither / hard grid",     col:"#dffbff", amt:0.85, on:true},
+ {id:"scan",    name:"DEPTH SCAN",        sub:"structured light / cyan phosphor",col:"#ff2bd6", amt:0.88, on:true, env:"hold"},
+ {id:"cool",    name:"AEROCHROME",        sub:"infrared film / false colour",    col:"#b4e5ff", amt:0.85, on:true, env:"bloom"},
+ {id:"noir",    name:"TECH NOIR",         sub:"green phosphor night vision",     col:"#ffa31a", amt:0.90, on:true, env:"hold"},
+ {id:"mil",     name:"MILITARY REALISM",  sub:"FLIR thermal / targeting HUD",    col:"#ffb800", amt:0.90, on:true, env:"pulse"},
+ {id:"plate",   name:"SPECIMEN PLATE",    sub:"archive record / calibration",    col:"#ff7a1a", amt:0.90, on:true, env:"bloom"},
+ {id:"glitch",  name:"GLITCH ART",        sub:"slice + channel split",           col:"#ff3da3", amt:0.80, on:true, env:"pulse"},
+ {id:"bprint",  name:"BLUEPRINT",         sub:"negative / engineering draft",    col:"#ff9d2e", amt:0.88, on:true, env:"hold"},
+ {id:"horror",  name:"ANALOG HORROR",     sub:"VHS breakup / tape warp",         col:"#a64dff", amt:0.85, on:true, env:"decay"},
+ {id:"feedback",name:"FEEDBACK LOOP",     sub:"stateful video recursion",        col:"#b9ff2e", amt:0.88, on:true, env:"rise"},
+ {id:"brutal",  name:"BRUTALISM DIGITAL", sub:"1-bit dither / hard grid",        col:"#dffbff", amt:0.85, on:true, env:"decay"},
 ];
 
 /* ---------- durum ---------- */
@@ -1104,6 +1115,14 @@ const LUT_CHROME=makeLUT(l=>{
          clamp(v*0.94+0.044+spec*0.55,0,1),
          clamp(v*1.02+0.082+spec*0.48,0,1)];});
 
+/* Lens cemberine ICTEN cizilen kare. SPECIMEN PLATE'in plaka mobilyasi
+   buraya oturuyor: tamami cemberin icinde kaldigi icin daha sonra cizilen
+   surround katmani ustune binmiyor. */
+function innerSq(w,h){
+  const R=Math.min(w,h)*0.5, k=R*0.707;
+  return {x0:w/2-k, y0:h/2-k, x1:w/2+k, y1:h/2+k, s:2*k};
+}
+
 const BAYER=[0,32,8,40,2,34,10,42,48,16,56,24,50,18,58,26,12,44,4,36,14,46,6,38,
              60,28,52,20,62,30,54,22,3,35,11,43,1,33,9,41,51,19,59,27,49,17,57,25,
              15,47,7,39,13,45,5,37,63,31,55,23,61,29,53,21];
@@ -1514,6 +1533,203 @@ glitch:{
   }
 },
 
+/* ---- SPECIMEN PLATE: goruntu bir arsiv numune plakasina donuyor ----
+   Fotograf tek basina bir eser degil, bir KAYIT. Lacivert kagit uzerine tek
+   murekkep camgobegi yuvarlak nokta trami (18 derece ekran acisi), cevresinde
+   cift cizgi cerceve, 11 kademeli kalibrasyon kamasi, 40 bolmeli cetvel
+   tirtiklari ve olcum cubuklari. Sette KOMPOZISYONU degistiren tek bank:
+   digerleri kadrajin tamamini filtreliyor, bu goruntuyu bir plakanin icine
+   oturtuyor. */
+plate:{
+  env:"bloom",
+  still(src,w,h,a){
+    const c=cv(w,h),x=c.getContext("2d",{willReadFrequently:true});
+    x.drawImage(src,0,0);
+    const id=x.getImageData(0,0,w,h),d=id.data;
+    const cell=Math.max(2.6,w/260), A=18*Math.PI/180;
+    const cs=Math.cos(A),sn=Math.sin(A);
+    const PAP=[7,16,38], INK=[96,232,246];
+    for(let y=0;y<h;y++)for(let xx=0;xx<w;xx++){
+      const i=(y*w+xx)*4;
+      const l=(0.2126*d[i]+0.7152*d[i+1]+0.0722*d[i+2])/255;
+      const u=(xx*cs+y*sn)/cell, v=(-xx*sn+y*cs)/cell;
+      const du=u-Math.floor(u)-0.5, dv=v-Math.floor(v)-0.5;
+      const dens=clamp(Math.pow(l,0.85),0,1);
+      const t=Math.hypot(du,dv)<Math.sqrt(dens)*0.60?1:0;
+      const nr=lerp(PAP[0],INK[0],t)*(0.55+0.55*l);
+      const ng=lerp(PAP[1],INK[1],t)*(0.55+0.55*l);
+      const nb=lerp(PAP[2],INK[2],t)*(0.60+0.50*l);
+      d[i]=lerp(d[i],Math.min(255,nr),a);
+      d[i+1]=lerp(d[i+1],Math.min(255,ng),a);
+      d[i+2]=lerp(d[i+2],Math.min(255,nb),a);
+    }
+    x.putImageData(id,0,0);
+    x.save();x.globalCompositeOperation="screen";x.globalAlpha=0.16*a;
+    x.filter="blur("+w*0.004+"px)";x.drawImage(c,0,0);x.restore();
+    vignette(x,w,h,0.42*a);
+    return c;
+  },
+  frame(dst,st,w,h,p){
+    dst.drawImage(st,0,0);
+    const S1=p.S, Q=innerSq(w,h), ink="rgba(110,236,250,";
+    /* Mobilya zarfla birlikte ciziliyor: segmentin basinda ve sonunda
+       geri cekiliyor, ortada tam okunuyor. */
+    const E=p.env!==undefined?p.env:1;
+    dst.save();
+    dst.strokeStyle=ink+(0.72*p.a*E)+")"; dst.lineWidth=Math.max(1,1.6*S1);
+    dst.strokeRect(Q.x0,Q.y0,Q.s,Q.s);
+    dst.lineWidth=Math.max(1,0.9*S1);
+    dst.strokeRect(Q.x0+Q.s*0.022,Q.y0+Q.s*0.022,Q.s*0.956,Q.s*0.956);
+    for(let i=0;i<=40;i++){
+      const X=Q.x0+Q.s*i/40, len=(i%5===0?Q.s*0.028:Q.s*0.014);
+      dst.beginPath();dst.moveTo(X,Q.y0);dst.lineTo(X,Q.y0+len);dst.stroke();
+    }
+    const bw=Q.s*0.40, bh=Q.s*0.030, bx=Q.x0+Q.s*0.030, by=Q.y1-bh-Q.s*0.030;
+    for(let i=0;i<11;i++){
+      const v=i/10;
+      dst.fillStyle="rgba("+(96*v|0)+","+(232*v|0)+","+(246*v|0)+","+(0.88*p.a*E)+")";
+      dst.fillRect(bx+bw*i/11,by,bw/11+0.6,bh);
+    }
+    dst.strokeStyle=ink+(0.55*p.a*E)+")";dst.lineWidth=Math.max(1,S1);
+    dst.strokeRect(bx,by,bw,bh);
+    const gx=Q.x1-Q.s*0.30, gy=Q.y1-Q.s*0.20;
+    for(let r=0;r<4;r++){
+      const yy=gy+r*Q.s*0.042;
+      const len=Q.s*0.26*(0.30+0.70*Math.abs(Math.sin(r*1.7+p.f*0.02)));
+      dst.strokeStyle=ink+(0.30*p.a*E)+")";dst.lineWidth=Math.max(1,S1);
+      dst.beginPath();dst.moveTo(gx,yy);dst.lineTo(gx+Q.s*0.26,yy);dst.stroke();
+      dst.fillStyle=ink+(0.80*p.a*E)+")";
+      dst.fillRect(gx,yy-Q.s*0.010,len,Q.s*0.013);
+    }
+    dst.restore();
+    grain(dst,w,h,p.rnd,0.10*p.a,128);
+  }
+},
+
+/* ---- BLUEPRINT: negatif + muhendislik cizimi ----
+   Sette parlakligi TERS ceviren tek bank. Lacivert zemin uzerine kemik
+   beyazi konturlar, Sobel ile cizgiye yakinsatiliyor; ustune 16x16 grid ve
+   kose kayit isaretleri biniyor. Hicbir sicak rengi yok, bu yuzden HUD
+   turuncu. */
+bprint:{
+  env:"hold",
+  still(src,w,h,a){
+    const c=cv(w,h),x=c.getContext("2d",{willReadFrequently:true});
+    x.drawImage(src,0,0);
+    const id=x.getImageData(0,0,w,h),d=id.data;
+    const L=new Float32Array(w*h);
+    for(let i=0,j=0;i<d.length;i+=4,j++) L[j]=(0.2126*d[i]+0.7152*d[i+1]+0.0722*d[i+2])/255;
+    for(let y=0;y<h;y++)for(let xx=0;xx<w;xx++){
+      const j=y*w+xx,i=j*4;
+      const l=1-L[j];                       // NEGATIF
+      const gx=L[j+(xx+1<w?1:0)]-L[j-(xx>0?1:0)];
+      const gy=L[j+(y+1<h?w:0)]-L[j-(y>0?w:0)];
+      const g=Math.min(1,(Math.abs(gx)+Math.abs(gy))*3.2);
+      const t=clamp(l*0.72+g*0.85,0,1), hi=Math.pow(t,3.0);
+      const nr=clamp(t*0.22+hi*0.86,0,1)*255;
+      const ng=clamp(t*0.46+hi*0.80,0,1)*255;
+      const nb=clamp(0.10+t*0.86+hi*0.42,0,1)*255;
+      d[i]=lerp(d[i],nr,a); d[i+1]=lerp(d[i+1],ng,a); d[i+2]=lerp(d[i+2],nb,a);
+    }
+    x.putImageData(id,0,0);
+    vignette(x,w,h,0.34*a);
+    return c;
+  },
+  frame(dst,st,w,h,p){
+    dst.drawImage(st,0,0);
+    const S1=p.S, E=p.env!==undefined?p.env:1;
+    dst.save();
+    dst.strokeStyle="rgba(180,230,255,"+(0.17*p.a*E)+")";
+    dst.lineWidth=Math.max(1,S1);
+    const N=16;
+    for(let i=1;i<N;i++){dst.beginPath();dst.moveTo(w*i/N,0);dst.lineTo(w*i/N,h);dst.stroke();}
+    for(let i=1;i<N;i++){dst.beginPath();dst.moveTo(0,h*i/N);dst.lineTo(w,h*i/N);dst.stroke();}
+    dst.strokeStyle="rgba(230,248,255,"+(0.55*p.a*E)+")";
+    dst.lineWidth=Math.max(1,1.6*S1);
+    const m=w*0.055, L2=w*0.030;
+    [[m,m,1,1],[w-m,m,-1,1],[m,h-m,1,-1],[w-m,h-m,-1,-1]].forEach(([X,Y,sx,sy])=>{
+      dst.beginPath();dst.moveTo(X,Y);dst.lineTo(X+sx*L2,Y);
+      dst.moveTo(X,Y);dst.lineTo(X,Y+sy*L2);dst.stroke();});
+    dst.restore();
+    grain(dst,w,h,p.rnd,0.07*p.a,128);
+  }
+},
+
+/* ---- FEEDBACK LOOP: ciktinin girdiye geri beslenmesi ----
+   Sibernetigin Wiener'daki tanimi, ve settle DURUM TUTAN tek efekt: her kare
+   onceki KAREYI hafifce buyutup dondurerek ustune bindiriyor — video
+   feedback'in kendisi. Tampon segment basinda ONCEKI BANKIN son karesiyle
+   tohumlaniyor (renderFrame p.prev ile veriyor), yani onceki estetik donerek
+   iceri cekilip eriyor: gecis efektin bir parcasi oluyor.
+   Still export'ta zaman yok, o yuzden ayni dongu still() icinde 22 adim
+   on-cevrimle deterministik olarak kuruluyor. */
+feedback:{
+  env:"rise",
+  still(src,w,h,a){
+    const c=cv(w,h),x=c.getContext("2d",{willReadFrequently:true});
+    const buf=cv(w,h), bx=buf.getContext("2d"); bx.drawImage(src,0,0);
+    const tmp=cv(w,h), tx=tmp.getContext("2d");
+    for(let k=0;k<22;k++){
+      tx.setTransform(1,0,0,1,0,0); tx.clearRect(0,0,w,h);
+      tx.save();
+      tx.translate(w/2,h/2); tx.rotate(0.011); tx.scale(1.035,1.035);
+      tx.globalAlpha=0.86; tx.drawImage(buf,-w/2,-h/2);
+      tx.restore();
+      tx.globalCompositeOperation="screen"; tx.globalAlpha=0.20;
+      tx.drawImage(src,0,0);
+      tx.globalCompositeOperation="source-over"; tx.globalAlpha=1;
+      bx.setTransform(1,0,0,1,0,0); bx.clearRect(0,0,w,h); bx.drawImage(tmp,0,0);
+    }
+    x.drawImage(buf,0,0);
+    applyLUT(c,w,h,makeLUT(l=>{const v=Math.pow(l,1.10),hi=Math.pow(v,3.4);
+      return[clamp(v*0.34+hi*1.00,0,1),clamp(v*0.86+hi*0.52,0,1),clamp(v*0.92+hi*0.22,0,1)];}),a);
+    x.save();x.globalCompositeOperation="screen";x.globalAlpha=0.20*a;
+    x.filter="blur("+w*0.008+"px)";x.drawImage(c,0,0);x.restore();
+    vignette(x,w,h,0.52*a);
+    return c;
+  },
+  frame(dst,st,w,h,p){
+    /* Canli dongu. Tampon segmentin basinda (local ~ 0) ya da zamanda
+       siçrama oldugunda (timeline'a tiklama) yeniden tohumlaniyor. */
+    const jump=(S.fbF===undefined)||Math.abs(p.f-S.fbF)>3;
+    if(!S.fbBuf||S.fbBuf.width!==w||S.fbBuf.height!==h){ S.fbBuf=cv(w,h); S.fbSeeded=false; }
+    const bx=S.fbBuf.getContext("2d");
+    if(jump||!S.fbSeeded||p.local<0.02){
+      bx.setTransform(1,0,0,1,0,0); bx.globalAlpha=1;
+      bx.globalCompositeOperation="source-over"; bx.clearRect(0,0,w,h);
+      bx.drawImage(p.prev||st,0,0);          // ONCEKI BANK varsa o
+      S.fbSeeded=true;
+    }
+    S.fbF=p.f;
+    const tmp=scratch("fbt",w,h), tx=tmp.getContext("2d");
+    tx.save();
+    tx.translate(w/2,h/2);
+    tx.rotate(0.012+0.010*Math.sin(p.f*0.09));
+    const k=1.030+0.010*Math.sin(p.f*0.2);
+    tx.scale(k,k);
+    tx.globalAlpha=0.79;              // iz kisaltildi
+    tx.drawImage(S.fbBuf,-w/2,-h/2);
+    tx.restore();
+    tx.globalCompositeOperation="screen";
+    tx.globalAlpha=0.15*p.a;
+    tx.drawImage(st,0,0);
+    bx.setTransform(1,0,0,1,0,0); bx.globalAlpha=1;
+    bx.globalCompositeOperation="source-over"; bx.clearRect(0,0,w,h);
+    bx.drawImage(tmp,0,0);
+    dst.drawImage(st,0,0);
+    dst.save();
+    dst.globalCompositeOperation="screen";
+    /* Ilk ayarda bu 0.34+0.42*env idi, yani tepede 0.76: birikmis tampon
+       kareyi screen ederken ozneyi tamamen yiyor, kadraj gri-teal bir
+       lekeye donuyordu. 0.22+0.20*env ile tepe 0.42'de kaliyor —
+       birikim hala okunuyor ama goruntu ayakta. */
+    dst.globalAlpha=clamp(0.22+0.20*(p.env!==undefined?p.env:1),0,0.48)*p.a;
+    dst.drawImage(S.fbBuf,0,0);
+    dst.restore();
+    grain(dst,w,h,p.rnd,0.09*p.a,128);
+  }
+},
+
 /* ---- BRUTALISM DIGITAL: 1-bit dither + sert grid ---- */
 brutal:{
   still(src,w,h,a){
@@ -1863,10 +2079,13 @@ function visibleDets(){
   S.vdSig=sig; S.vdCache=v;
   return v;
 }
-function drawBoxes(dst,w,h,S1,col){
+function drawBoxes(dst,w,h,S1,col,mul){
   if(!$("#p_boxes").checked) return;
+  const MUL=mul===undefined?1:clamp(mul,0,1);
+  if(MUL<=0.01) return;
   const showL=$("#p_labels").checked;
   dst.save();
+  dst.globalAlpha=MUL;
   dst.lineWidth=Math.max(1,1.6*S1);
   dst.font="700 "+(13*S1|0)+"px "+CF;
   dst.shadowColor=col; dst.shadowBlur=7*S1;   // neon halesi
@@ -1995,6 +2214,153 @@ function timeline(){
   const seg=engine/n;
   return {list,seg,dur:Math.max(0.001,engine),fileDur};
 }
+/* ═══ SEGMENT ZARFI ═══════════════════════════════════════════════════════
+   Onceden yoktu: p.a sabitti ve yalnizca segment sinirlarinda harmanlaniyordu,
+   yani on bankin hepsi kendi suresi boyunca DUZ bir plato olarak akiyordu.
+   Artik her bank bir yay ciziyor. Zarf yalnizca frame()'e giden p.a ve
+   p.env'i olcekliyor; still() hala tam a.amt ile uretiliyor, yani
+   stillCache gecersiz kalmiyor ve kare basina ek maliyet cikmiyor. */
+const ENV={
+  /* yumusak giris/cikis, aradaki plato tam guclu — eski davranisa en yakini */
+  hold : u=>0.88+0.12*smooth(clamp(u*7,0,1))*smooth(clamp((1-u)*7,0,1)),
+  /* ortada tepe yapiyor: plaka mobilyasi ve IR bloom icin */
+  bloom: u=>0.60+0.40*Math.sin(Math.PI*clamp(u,0,1)),
+  /* sona dogru buyuyor: FEEDBACK'in birikimi icin */
+  rise : u=>0.52+0.48*Math.pow(clamp(u,0,1),0.72),
+  /* sert girip yumusuyor: BRUTAL ve HORROR'un bozulmasi icin */
+  decay: u=>1.00-0.36*Math.pow(clamp(u,0,1),0.62),
+  /* iki tepe: hedefleme tik'i ve glitch patlamasi icin */
+  pulse: u=>0.68+0.32*Math.abs(Math.sin(Math.PI*clamp(u,0,1)*2)),
+};
+function envMul(a,local){const f=ENV[a.env]||ENV.hold;return clamp(f(local),0,1);}
+/* Bank id'sinden kararli bir tohum. Once id.charCodeAt(0) kullaniliyordu;
+   on bankta ilk harf cakisiyor (brutal/bprint, scan/... ) ve iki bank ayni
+   rastgele akisi paylasiyordu. */
+function hashId(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=(h*16777619)>>>0;}return h;}
+
+/* ═══ GECIS MATRISI ═══════════════════════════════════════════════════════
+   Onceden tek bir global dissolve vardi ve on cifte de ayni duz alfa
+   harmani uygulaniyordu. Artik her komsu cift kendi gecisini aliyor; secimler
+   olculen ton ve ZEMIN PARLAKLIGI degerlerine dayaniyor, cunku asil tehlike
+   iki farkli zemini dissolve etmek: ortada gri bir camur olusuyor. */
+const TRANS={
+  /* sert kesme */
+  cut(dst,A,B,w,h,k){ dst.drawImage(k<0.5?A:B,0,0); return 1; },
+  /* duz alfa harmani — eski davranis, hala varsayilan */
+  diss(dst,A,B,w,h,k){
+    dst.drawImage(A,0,0);
+    dst.save(); dst.globalAlpha=k; dst.drawImage(B,0,0); dst.restore(); return 1;
+  },
+  /* siyaha dusup geri cikma: zemin parlakligi cok farkli ya da tonlar
+     tamamlayici oldugunda dissolve yerine bu kullaniliyor */
+  dip(dst,A,B,w,h,k){
+    const u=k<0.5?k*2:(k-0.5)*2, veil=clamp(k<0.5?u:1-u,0,1);
+    dst.drawImage(k<0.5?A:B,0,0);
+    dst.save(); dst.globalAlpha=veil; dst.fillStyle="#000";
+    dst.fillRect(0,0,w,h); dst.restore();
+    return 1-veil;                      // HUD ve neon da karartiya uysun
+  },
+  /* tarama silme: sinirda giren bankin renginde bir tarama cubugu */
+  wipe(dst,A,B,w,h,k,c){
+    dst.drawImage(A,0,0);
+    const y=k*h, bh=Math.max(2,h*0.012);
+    dst.save(); dst.beginPath(); dst.rect(0,0,w,y); dst.clip();
+    dst.drawImage(B,0,0); dst.restore();
+    const g=dst.createLinearGradient(0,y-bh,0,y+bh);
+    g.addColorStop(0,"rgba(0,0,0,0)"); g.addColorStop(0.5,c.col);
+    g.addColorStop(1,"rgba(0,0,0,0)");
+    dst.save(); dst.globalCompositeOperation="screen"; dst.globalAlpha=0.55;
+    dst.fillStyle=g; dst.fillRect(0,y-bh,w,bh*2); dst.restore();
+    return 1;
+  },
+  /* iris: merkezden acilan daire — optik bir sey kilitliyormus gibi */
+  iris(dst,A,B,w,h,k,c){
+    dst.drawImage(A,0,0);
+    const R=k*Math.hypot(w,h)*0.55;
+    dst.save(); dst.beginPath(); dst.arc(w/2,h/2,R,0,6.2832); dst.clip();
+    dst.drawImage(B,0,0); dst.restore();
+    dst.save(); dst.globalCompositeOperation="screen"; dst.globalAlpha=0.45;
+    dst.strokeStyle=c.col; dst.lineWidth=Math.max(1,2*c.S1);
+    dst.beginPath(); dst.arc(w/2,h/2,R,0,6.2832); dst.stroke(); dst.restore();
+    return 1;
+  },
+  /* glitch yirtigi: giren bank yatay bantlar halinde aciliyor, bantlar
+     basta kaymis geliyor ve gecis ilerledikce yerine oturuyor */
+  tear(dst,A,B,w,h,k,c){
+    dst.drawImage(A,0,0);
+    const N=22, bh=h/N;
+    for(let i=0;i<N;i++){
+      if(((i*7)%N)/N>k) continue;       // deterministik acilma sirasi
+      const ox=(c.rnd()-0.5)*w*0.12*(1-k);
+      dst.drawImage(B,0,i*bh,w,bh+1, ox,i*bh,w,bh+1);
+    }
+    return 1;
+  },
+  /* feedback bulasmasi: cikan bank donerek buyuyup eriyor, giren bank
+     altindan cikiyor. FEEDBACK LOOP'un tamponu da ayni kareyi miras
+     aldigi icin gecis ile efekt ayni seyi soyluyor. */
+  smear(dst,A,B,w,h,k){
+    dst.drawImage(B,0,0);
+    /* Pasalar YARIM olcekte BIRIKTIRILIYOR, sonra bir kez buyutuluyor.
+       Ilk surumde uc pasa da tam boyda screen ediliyordu: 1080'de kare
+       basina ~3.5 milyon piksellik yazilim harmani demek. Yarim olcekte
+       biriktirmek ayni izi verip harman maliyetini dorde boluyor. */
+    const hw=Math.max(2,w>>1), hh=Math.max(2,h>>1);
+    const half=scratch("smh",hw,hh), hx=half.getContext("2d");
+    hx.drawImage(A,0,0,hw,hh);
+    const acc=scratch("sma",hw,hh), ax2=acc.getContext("2d");
+    ax2.globalCompositeOperation="lighter";
+    for(let i=0;i<3;i++){
+      const al=(1-k)*0.62/(i+1); if(al<0.01) continue;
+      ax2.globalAlpha=al;
+      ax2.save(); ax2.translate(hw/2,hh/2); ax2.rotate(0.075*i);
+      const sc2=1+0.085*i; ax2.scale(sc2,sc2);
+      ax2.drawImage(half,-hw/2,-hh/2); ax2.restore();
+    }
+    dst.save(); dst.globalCompositeOperation="screen"; dst.globalAlpha=1;
+    dst.drawImage(acc,0,0,w,h); dst.restore();
+    return 1;
+  }
+};
+/* Cift -> gecis. Gerekce her satirda; listede olmayan cift diss'e duser. */
+const XF={
+  /* 195 -> 2 derece, setteki en sert ton atlamasi: harmanlamak onu
+     yumusatir, o yuzden kesme */
+  "scan>cool"     : "cut",
+  /* kirmizi -> yesil tamamlayici; dissolve ortada gri camur verir */
+  "cool>noir"     : "dip",
+  /* yesil -> mor-magenta, yine tamamlayici; mil hedefleme banki oldugu icin
+     acilan iris optigin kilitlenmesi gibi okunuyor */
+  "noir>mil"      : "iris",
+  /* plate bir KAYIT; tarama silme belgeyi tarayiciya surmek gibi */
+  "mil>plate"     : "wipe",
+  /* duzenden dagilmaya: giren bankin kendi dili yirtik */
+  "plate>glitch"  : "tear",
+  /* zemin 4 -> 149: setteki tek buyuk parlaklik atlamasi. Dissolve burada
+     kesinlikle camur; kesme atlamayi karakter yapiyor */
+  "glitch>bprint" : "cut",
+  /* 149 -> 8: geri karanliga. dip iki karartiyi ust uste koyacagi icin
+     yirtik kullaniliyor, bant bant parcalayarak atlamayi tasiyor */
+  "bprint>horror" : "tear",
+  /* miras gecisi: bandin bozulmus karesi feedback tamponuna bulasiyor */
+  "horror>feedback":"smear",
+  /* birikmis parlama 1-bit esigini bozar; once siyaha dusup temizleniyor */
+  "feedback>brutal":"dip",
+  /* dongu kapanisi: akromatik dither -> yapisal isik. tarama cubugu
+     DEPTH SCAN'in kendi dilini onceden haber veriyor */
+  "brutal>scan"   : "wipe",
+};
+function transFor(a,b){return TRANS[XF[a+">"+b]]?XF[a+">"+b]:"diss";}
+/* Kesme ve siyaha dususte her an yalnizca TEK katman gorunur; gorunmeyeni
+   render etmek bosa maliyet. Gecis suresi zamanin %16'si ve o anlarda kare
+   maliyeti iki katina cikiyordu — bu iki tipte artik cikmiyor.
+   Istisna: giren bank FEEDBACK LOOP ise iki katman da gerekiyor, cunku
+   tamponunu CIKAN bankin karesiyle tohumluyor. */
+function transSolo(ty,k){
+  if(ty==="cut"||ty==="dip") return k<0.5?0:1;
+  return -1;
+}
+
 /* t anında hangi akım(lar) aktif, hangi ağırlıkla */
 function mixAt(t){
   const {list,seg,dur}=timeline();
@@ -2003,11 +2369,18 @@ function mixAt(t){
   const i=Math.min(list.length-1,Math.floor(tt/seg));
   const local=tt-i*seg;
   const xf=Math.min(seg*P("xfpct")/100,seg*0.45);
-  const out=[{a:list[i],w:1,local:local/seg}];
+  /* si = bankin KENDI segment indeksi. Gecis boyunca giren bankin local'i
+     0'da sabit tutuluyordu; FEEDBACK LOOP tamponunu segment basinda
+     tohumladigi icin bu her karede yeniden tohumlama demekti. Artik
+     tohumlama local'a degil si'ye bakiyor. */
+  const out=[{a:list[i],w:1,local:local/seg,si:i}];
+  out.k=0;
   if(xf>0.01&&local>seg-xf&&list.length>1){
     const k=smooth((local-(seg-xf))/xf);
     out[0].w=1-k;
-    out.push({a:list[(i+1)%list.length],w:k,local:0});
+    out.push({a:list[(i+1)%list.length],w:k,
+              local:Math.max(0,(local-(seg-xf))/seg),si:i+1});
+    out.k=k;
   }
   return out;
 }
@@ -2031,41 +2404,101 @@ function renderFrame(dst,w,h,t){
   if(!mix.length||!S.img) return;
 
   const nDet=visibleDets().length;
-  let top=mix[0], layer=scratch("layer",w,h), lx=layer.getContext("2d",{willReadFrequently:true});
-
-  for(const m of mix){
-    lx.setTransform(1,0,0,1,0,0); lx.globalAlpha=1;
-    lx.globalCompositeOperation="source-over"; lx.filter="none"; lx.clearRect(0,0,w,h);
-    const rnd=mulberry32(seed*7919+f*131+m.a.id.charCodeAt(0)*17);
-    FX[m.a.id].frame(lx,stillFor(m.a,w,h),w,h,
-      {t,f,rnd,a:m.a.amt,S:S1,local:m.local,dets:nDet});
-    dst.globalAlpha=m.w;
-    dst.drawImage(layer,0,0);
-    dst.globalAlpha=1;
-    if(m.w>0.5) top=m;
+  /* Katman basina p: zarf hem p.a'yi hem p.env'i olcekliyor. prev = CIKAN
+     bankin cizilmis karesi; FEEDBACK LOOP tamponunu bununla tohumluyor. */
+  const mkP=(m,prev)=>{
+    const e=envMul(m.a,m.local);
+    return {t,f,rnd:mulberry32(seed*7919+f*131+hashId(m.a.id)),
+            a:m.a.amt*e, S:S1, local:m.local, si:m.si, env:e, dets:nDet, prev};
+  };
+  const draw1=(cx2,m,prev)=>{
+    cx2.setTransform(1,0,0,1,0,0); cx2.globalAlpha=1;
+    cx2.globalCompositeOperation="source-over"; cx2.filter="none";
+    cx2.clearRect(0,0,w,h);
+    FX[m.a.id].frame(cx2,stillFor(m.a,w,h),w,h,mkP(m,prev));
+  };
+  let top=mix[0], vis=1;
+  const LA=scratch("layA",w,h), ax=LA.getContext("2d",{willReadFrequently:true});
+  if(mix.length>1){
+    const ty=transFor(mix[0].a.id,mix[1].a.id);
+    const solo=mix[1].a.id==="feedback"?-1:transSolo(ty,mix.k);
+    const LB=scratch("layB",w,h), bx2=LB.getContext("2d",{willReadFrequently:true});
+    if(solo===0){                               // yalnizca cikan gorunur
+      draw1(ax,mix[0],null);
+      dst.drawImage(LA,0,0);
+      vis=ty==="dip"?1-clamp(mix.k*2,0,1):1;
+      if(ty==="dip"){dst.save();dst.globalAlpha=1-vis;dst.fillStyle="#000";
+        dst.fillRect(0,0,w,h);dst.restore();}
+    } else if(solo===1){                        // yalnizca giren gorunur
+      draw1(bx2,mix[1],null);
+      dst.drawImage(LB,0,0);
+      vis=ty==="dip"?clamp((mix.k-0.5)*2,0,1):1;
+      if(ty==="dip"){dst.save();dst.globalAlpha=1-vis;dst.fillStyle="#000";
+        dst.fillRect(0,0,w,h);dst.restore();}
+      top=mix[1];
+    } else {
+      /* smear'de CIKAN bank donerek buyuyup eriyor: o karenin kendi ic
+         animasyonu zaten gorunmuyor. Bu yuzden cikan katman gecisin ilk
+         karesinde bir kez render edilip donduruluyor. Iki frame() cagrisi
+         yerine bir tane kaliyor — gecis karesi 24 fps'ten cikiyor.
+         Diger tiplerde cikan bank genis bir alanda tam gorunur oldugu icin
+         dondurma gozle farkedilir, o yuzden yalnizca smear'de yapiliyor. */
+      let Aimg=LA;
+      if(ty==="smear"){
+        if(!S.frzCv||S.frzCv.width!==w||S.frzCv.height!==h){S.frzCv=cv(w,h);S.frzSi=-1;}
+        if(S.frzSi!==mix[1].si){
+          const fx=S.frzCv.getContext("2d",{willReadFrequently:true});
+          draw1(fx,mix[0],null);
+          S.frzSi=mix[1].si;
+        }
+        Aimg=S.frzCv;
+      } else {
+        draw1(ax,mix[0],null);
+      }
+      draw1(bx2,mix[1],Aimg);                   // giren banka cikan kareyi ver
+      vis=TRANS[ty](dst,Aimg,LB,w,h,mix.k,
+        {col:mix[1].a.col,S1,rnd:mulberry32(seed*104729+f*7919)});
+      if(mix.k>0.5) top=mix[1];
+    }
+  } else {
+    draw1(ax,mix[0],null);
+    dst.drawImage(LA,0,0);
   }
+  /* Zarf ustteki bankin, gorunurluk ise gecisin: dip sirasinda kadraj
+     karartilirken HUD ve neon da onunla birlikte iniyor. */
+  const TE=envMul(top.a,top.local), OV=vis*(0.74+0.26*TE);
 
   /* Sira onemli: neon goruntunun KENARLARINI okuyor, bu yuzden HUD'dan once
      calismali — yoksa kutu cizgilerini de kenar sanip onlari da yakar.
      Surround da kendi rengini merceğin kenarindan okuyor, o da HUD'dan once. */
-  neonEdges(dst,w,h,top.a.col,S1,f);
-  surround(dst,w,h,top.a.col);
+  neonEdges(dst,w,h,top.a.col,S1,f,OV);
+  surround(dst,w,h,top.a.col,OV);
 
-  drawBoxes(dst,w,h,S1,top.a.col);
+  /* Kutular artik surekli acik degil: segmentin ilk %8'inde beliriyor,
+     son %10'unda cekiliyor, ve gecisin gorunurluguyle carpiliyor. */
+  drawBoxes(dst,w,h,S1,top.a.col,
+    OV*clamp(Math.min(top.local*12,(1-top.local)*10),0,1));
   // başlık kartı
   if($("#p_title").checked){
     const fade=clamp(Math.min(top.local*6,(1-top.local)*6),0,1);
     dst.save();
-    dst.globalAlpha=0.95*fade;
+    dst.globalAlpha=0.95*fade*OV;
     radarTrace(dst,18*S1,16*S1,56*S1,24*S1,t,top.a.col,S1);
     dst.fillStyle=top.a.col;
     dst.font="700 "+(17*S1|0)+"px "+CF;
     dst.fillText(top.a.name,(18+64)*S1,34*S1);
     dst.restore();
   }
-  drawStamp(dst,w,h,S1,top.a.col, on("p_fxtext")
-    ? "F"+String(f).padStart(5,"0")+"  "+w+"×"+h+"  TRK "+String(nDet).padStart(2,"0")
-    : null);
+  /* Rozet de gecisin gorunurluguyle carpiliyor. Ilk surumde carpilmiyordu
+     ve siyaha dusus aninda kadraj tamamen kararirken ID rozeti havada
+     asili kaliyordu. */
+  if(OV>0.01){
+    dst.save(); dst.globalAlpha=OV;
+    drawStamp(dst,w,h,S1,top.a.col, on("p_fxtext")
+      ? "F"+String(f).padStart(5,"0")+"  "+w+"×"+h+"  TRK "+String(nDet).padStart(2,"0")
+      : null);
+    dst.restore();
+  }
 }
 
 /* ───────────────────────────────────────────────────────────────────────────
@@ -2083,9 +2516,10 @@ function renderFrame(dst,w,h,t){
    Renk aktif bankin HUD renginden gelir, boylece kutularla ayni dilde kalir.
    Maske lens cemberine kirpilir; surround'un kendi katmanlari var.
    ───────────────────────────────────────────────────────────────────────── */
-function neonEdges(dst,w,h,col,S1,f){
+function neonEdges(dst,w,h,col,S1,f,mul){
   if(!on("p_neon")) return;
-  const INT=P("neonint"); if(INT<=0.001) return;
+  const MUL=mul===undefined?1:clamp(mul,0,1);
+  const INT=P("neonint")*MUL; if(INT<=0.001) return;
   const TH=Math.max(0.02,P("neonth")), THICK=P("neonw"), GL=P("neongl");
   const N=Math.max(200,Math.round(w/2));
   const rgb=hex2rgb(col);
@@ -2199,8 +2633,9 @@ function hex2rgb(c){const n=parseInt(c.slice(1),16);return [n>>16&255,n>>8&255,n
    taban goruntu stillCache'de, isin konumlari seed'den. Bu yuzden imza
    (taban anahtari + bank + kaydiraclar + seed + olcu) degisince bir kez
    kurulup onbellege alinir, sonraki karelerde tek drawImage ile biner. */
-function surround(dst,w,h,col){
+function surround(dst,w,h,col,mul){
   const G=lensGeom(w,h); if(!G) return;
+  const MUL=mul===undefined?1:clamp(mul,0,1);
   const ECHO=P("surecho"), RAYS=P("surrays"), SPK=P("surspikes");
   if(ECHO<=0.001&&RAYS<=0.001&&SPK<=0.001) return;
   const sig=[S.baseKey,col,ECHO,RAYS,SPK,$("#p_seed").value,w,h,lensR(),
@@ -2767,6 +3202,7 @@ $("#tl").addEventListener("click",e=>{
 
 buildAeList(); buildTL(); applyRes(); grpInit(); mobileNav(); fitStage(); lensUI();
 window.NYTA={S,FX,renderFrame,timeline,detect,blobDetect,outSize,AESTHETICS,buildBase,boxToCanvas,twistProf,
+  envMul,transFor,mixAt,XF,
   visibleDets,contrastMap,salientBox,partOf,loadImageElement(img){
   S.img=img;S.baseKey="";S.stillCache.clear();S.t=0;S.dets=[];
   $("#empty").style.display="none";
@@ -2789,8 +3225,9 @@ console.log("[NYTA] engine ready");
    ═════════════════════════════════════════════════════════════════════════ */
 (function(){
 "use strict";
-const BANK=["BNK-01","BNK-02","BNK-03","BNK-04","BNK-05","BNK-06","BNK-07"];
-const CODE={scan:"DS",cool:"EC",noir:"TN",horror:"AH",mil:"MR",glitch:"GA",brutal:"BD"};
+const BANK=["BNK-01","BNK-02","BNK-03","BNK-04","BNK-05",
+             "BNK-06","BNK-07","BNK-08","BNK-09","BNK-10"];
+const CODE={plate:"SP",bprint:"BP",feedback:"FB",scan:"DS",cool:"EC",noir:"TN",horror:"AH",mil:"MR",glitch:"GA",brutal:"BD"};
 
 /* ── boot sekansı ────────────────────────────────────────────────────────── */
 const boot=document.getElementById("boot");
