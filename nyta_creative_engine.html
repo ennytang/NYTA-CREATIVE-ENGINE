@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>NYTA Creative Engine</title>
+<link rel="icon" type="image/x-icon" href="nyta.ico">
+<link rel="shortcut icon" type="image/x-icon" href="nyta.ico">
 <style>
 /* Chakra Petch — dosyaya gomulu: internet gerekmez, file:// uzerinde CORS sorunu yok */
 @font-face{font-family:'Chakra Petch';font-style:normal;font-weight:600;font-display:block;
@@ -1302,39 +1304,150 @@ cool:{
            Elimizdeki tek ayirt edici sinyal MAVININ YESILE gore baskinligi. */
         const lum0=0.2126*r+0.7152*g+0.0722*b;
         const cy=clamp((b-g)*2.0+(lum0-ir0*0.78)*0.55,0,1);
-        const ir=ir0*(1-cy*0.95);
+        /* Siyan karsiti yariya indirildi: gokyuzu/beton hala soguk kaliyor
+           ama kadraji ikiye bolmuyor. 0.95'ten 0.62'ye inerken dikkat ettigim
+           sey, siyan bolgelere geri donen kirmizinin onlari lavantaya
+           kaydirmamasi — asagida govde kirmizisi da ayni oranda kisiliyor. */
+        const ir=ir0*(1-cy*0.62);
         /* SECICI: gamma>1 golgeleri asagi ceker, boylece kirmizi isigin
            degdigi yuzeyde toplanir. 1.45 denedim, orta tonlari tamamen
            siyaha indirdi ve goruntunun govdesi kayboldu; 1.18 seciciligi
            koruyup govdeyi birakiyor. */
-        const t=Math.pow(ir,1.18);
+        /* 1.18 -> 1.26: bir tik daha secici. Daha yukari cikmadim cunku
+           asagida gölgelere pihti tabani ekleniyor; ikisi birlikte 1.32'de
+           orta tonlari fazla karartiyordu. */
+        const t=Math.pow(ir,1.26);
         /* GOVDE: mavi yesilden FAZLA (ton ~358 derece) — kan kirmizisi.
            Onceki karisim mavinin cogunu koruyordu, R+B pembe veriyordu;
            maviyi yesilin ALTINA dusurmek de turuncuya kaydiriyor. */
-        let nr=Math.min(1,t*1.22);
+        /* ATARDAMAR KATLAMASI: rampanin tepesi geri katlaniyor. Kalin kan
+           isigi YUTAR — en yogun bolge en koyu olandir, acik degil. Diz
+           ustunde t arttikca kirmizi artmak yerine azaliyor.
+           Bunu eklemek zorunda kaldim cunku pihti tabani yalnizca (1-t)^2.2
+           ile carpili, yani golgede calisiyor: flasla aydinlatilmis parlak
+           bir oznede t tavana yapisik oldugu icin taban sifira iniyor ve
+           kare hic degismiyordu. Kani parlak karede artirmanin yolu golgeyi
+           bordulastirmak degil, parlak kirmiziyi koyultmak. */
+        const FK=0.72, FD=0.62;
+        let nr=Math.max(0,Math.min(1, t<=FK ? t*1.26 : FK*1.26-(t-FK)*FD ));
         let ng=Math.pow(t,3.8)*0.13;
         let nb=Math.pow(t,2.8)*0.26;
+        /* PIHTI TABANI: kan karanlikta siyah degil koyu bordo kalir. Taban
+           kaynagin KENDI parlakligina bagli — gercek siyahlar (lum0~0) siyah
+           kaliyor, yalnizca golgede DETAY olan yerler bordoya donuyor.
+           Yoksa kadrajin tamami kirmiziya yikaniyordu. */
+        const clot=Math.pow(clamp(lum0*1.7,0,1),0.75)*Math.pow(1-t,2.2)*0.36;
+        nr=Math.min(1,nr+clot);
+        nb=Math.min(1,nb+clot*0.15);          // toplardamar derinligi
         /* TEPE CEKIRDEGI: yalnizca gercekten parlak bir BOLGE beyaza patlar,
            cevresi kirmizi hale kalir. */
         const jb=(by*bw2+Math.min(bw2-1,(x2*bw2/w)|0))*4;
         const bl=(0.2126*bd[jb]+0.7152*bd[jb+1]+0.0722*bd[jb+2])/255;
-        const hi=clamp((bl-0.80)/0.20,0,1), hw=hi*hi*hi;
-        ng=Math.min(1,ng+hw*0.92);
-        nb=Math.min(1,nb+hw*0.88);
+        /* Diz 0.80 -> 0.86, kazanc 0.92/0.88 -> 0.66/0.60. Beyaz patlamalar
+           kareyi "temiz" gosteriyordu; kisildikca kadraj kirmizida kaliyor.
+           Tamamen kaldirmadim, islak tepe hissi ondan geliyor. */
+        /* Katlamayla birlikte diz 0.86 -> 0.92, kazanc 0.66 -> 0.30: tepeyi
+           koyultup ayni yerde beyaz patlatmak birbirini goturuyordu. Iz
+           olarak birakildi, tamamen kapatilmadi. */
+        const hi=clamp((bl-0.92)/0.08,0,1), hw=hi*hi*hi;
+        ng=Math.min(1,ng+hw*0.30);
+        nb=Math.min(1,nb+hw*0.26);
         /* Siyan govdesi: yesil ve mavi birlikte kalkar, kirmizi zaten
            sondurulmus durumda. */
-        ng=Math.min(1,ng+cy*0.92);
-        nb=Math.min(1,nb+cy*0.88);
-        nr=Math.max(0,nr*(1-cy*0.55));
+        ng=Math.min(1,ng+cy*0.46);
+        nb=Math.min(1,nb+cy*0.44);
+        nr=Math.max(0,nr*(1-cy*0.34));
         d[i]  =255*clamp(lerp(r,nr,a),0,1);
         d[i+1]=255*clamp(lerp(g,ng,a),0,1);
         d[i+2]=255*clamp(lerp(b,nb,a),0,1);
       }
     }
+    /* ---- EMULSIYON KAYMASI ----
+       Kirmizi kanal YEREL GRADYAN yonunde suruluyor: islak emulsiyonun
+       parmakla cekilmesi. Gurultu degil, goruntunun kendi yapisina bagli —
+       konturun oldugu yerde kayiyor, duz alanda hic dokunmuyor. Tek gecis,
+       still() onbellege girdigi icin kare basina maliyeti yok. */
+    {
+      const L2=new Float32Array(w*h), R2=new Uint8ClampedArray(w*h);
+      for(let i=0,j=0;i<d.length;i+=4,j++){
+        L2[j]=(0.2126*d[i]+0.7152*d[i+1]+0.0722*d[i+2])/255; R2[j]=d[i];
+      }
+      const K=Math.max(2,w*0.0095)*a;        // genlik iki katina cikarildi
+      for(let y=1;y<h-1;y++)for(let x2=1;x2<w-1;x2++){
+        const j=y*w+x2;
+        const gx=L2[j+1]-L2[j-1], gy=L2[j+w]-L2[j-w];
+        const m=Math.hypot(gx,gy);
+        if(m<0.02) continue;
+        const k2=K*Math.min(1,m*3.2);
+        const sx2=(x2-gx/m*k2)|0, sy2=(y-gy/m*k2)|0;
+        if(sx2<0||sy2<0||sx2>=w||sy2>=h) continue;
+        const v=R2[sy2*w+sx2];
+        if(v>d[j*4]) d[j*4]=v;            // surukleme ekler, silmez
+      }
+    }
+    /* ---- DIKEY AKMA (damla) ----
+       Ilk denememde sutunlarin %17'si damliyordu ve sonumleme 0.9885-0.996
+       araligindaydi: 760 pikselde iz neredeyse hic sonmuyor, her damla
+       kadraji bastan sona kat ediyordu. Sonuc damla degil TARAK oluyordu —
+       dikey cubuklardan bir perde. Simdi cok daha az cekirdek sutun var,
+       her biri 2-5 piksellik bir COGALTI olarak akiyor (tek piksel cizgi
+       damla gibi okunmuyor), ve sonumleme izi 30-150 piksel araliginda
+       kesiyor. Tohum sabit: still onbellekte, kare kare degismemeli. */
+    {
+      const rnd2=mulberry32(0x5EEDB10D);
+      for(let x2=0;x2<w;x2++){
+        if(rnd2()>0.11) continue;      // damlayan sutun orani iki katina
+        const wd=3+((rnd2()*5)|0);                 // cogalti genisligi
+        for(let k=0;k<wd && x2+k<w;k++){
+          const dec=0.968+rnd2()*0.023;            // iz ~60-260 px
+          const gain=(0.62+rnd2()*0.26)*a;
+          let run=0;
+          for(let y=0;y<h;y++){
+            const i=(y*w+(x2+k))*4, rr=d[i]/255;
+            run=Math.max(run*dec, rr>0.62?rr:0);
+            if(run>rr+0.04){
+              const v=run*gain;
+              if(255*v>d[i]) d[i]=255*v;
+              d[i+2]=Math.min(255,d[i+2]+255*v*0.05);
+            }
+          }
+        }
+        x2+=wd+((rnd2()*14)|0);                    // damlalar kumelenmesin
+      }
+    }
     x.putImageData(id,0,0);
     // film halasyonu: kizilotu emulsiyonda tepe kirmizilar tasar
-    x.save(); x.globalCompositeOperation="screen"; x.globalAlpha=0.20*a;
-    x.filter="blur("+w*0.011+"px)"; x.drawImage(c,0,0); x.restore();
+    /* Halasyon artik NOTR degil kirmizi: bulanik kopya once sicak bir
+       renkle carpiliyor, sonra screen ediliyor. Boylece parlak bolgeler
+       beyaza degil islak kana tasiyor. */
+    {
+      const hb=scratch("aehal",w,h), hx=hb.getContext("2d");
+      hx.filter="blur("+w*0.013+"px)"; hx.drawImage(c,0,0); hx.filter="none";
+      hx.globalCompositeOperation="multiply";
+      hx.fillStyle="#ff2a10"; hx.fillRect(0,0,w,h);
+      x.save(); x.globalCompositeOperation="screen"; x.globalAlpha=0.34*a;
+      x.drawImage(hb,0,0); x.restore();
+    }
+    /* ---- KIMYASAL LEKE ----
+       Banyo hatasi: dusuk frekansli, duzensiz koyu lekeler. Ayri bir
+       katmanda tutuluyor ki frame() onu yavasca kaydirabilsin — sabit
+       kalsaydi lens uzerinde bir leke gibi okunurdu, film gibi degil. */
+    {
+      const sc2=scratch("aestain",w,h), sx3=sc2.getContext("2d");
+      sx3.fillStyle="#ffffff"; sx3.fillRect(0,0,w,h);
+      const rs=mulberry32(0x57A11);
+      for(let i=0;i<7;i++){
+        const cx2=rs()*w, cy2=rs()*h, R=w*(0.10+rs()*0.22);
+        const g2=sx3.createRadialGradient(cx2,cy2,R*0.15,cx2,cy2,R);
+        const dk=0.42+rs()*0.30;
+        g2.addColorStop(0,"rgba("+(120*dk|0)+","+(70*dk|0)+","+(60*dk|0)+",0.85)");
+        g2.addColorStop(0.62,"rgba(150,90,80,0.28)");
+        g2.addColorStop(1,"rgba(255,255,255,0)");
+        sx3.fillStyle=g2; sx3.beginPath(); sx3.arc(cx2,cy2,R,0,6.2832); sx3.fill();
+      }
+      const keep=cv(w,h); keep.getContext("2d").drawImage(sc2,0,0);
+      c._stain=keep;
+    }
     vignette(x,w,h,0.40*a);
     return c;
   },
@@ -1344,7 +1457,98 @@ cool:{
     dst.translate(w/2,h/2); dst.scale(s,s);
     dst.translate(-w/2+(p.rnd()-0.5)*1.1*p.S,-h/2+(p.rnd()-0.5)*1.1*p.S);
     dst.drawImage(st,0,0); dst.restore();
+    /* ---- KIRMIZI KANAL YIRTIKLARI ----
+       Bankta simdiye kadar hic DIJITAL bozulma yoktu: kapi titremesi, damla
+       ve leke analog kusurlar, hepsi karede sabit duruyor. Glitch'in okunmasi
+       icin bozulmanin kare kare DEGISMESI gerekiyor.
+       GLITCH ART bankindan ayri kalsin diye oradaki tam kanal dilim kaymasi
+       ve RGB ayrimini kullanmiyorum. AEROCHROME neredeyse tek kanalli bir
+       goruntu oldugu icin burada YALNIZCA kirmiziyi kaydirmak yetiyor:
+       kaydirilan kopya siyah boslukla birlikte geliyor ve yirtik cok net
+       okunuyor. Kirmizi kopya still tuvaline asiliyor (st cachelenmis), yani
+       kare basina yalnizca drawImage dusuyor. */
+    if(!st._red){
+      const rc=cv(w,h), rx=rc.getContext("2d");
+      rx.drawImage(st,0,0);
+      rx.globalCompositeOperation="multiply";
+      rx.fillStyle="#ff0000"; rx.fillRect(0,0,w,h);   // G ve B sifirlanir
+      st._red=rc;
+    }
+    {
+      /* Yirtiklar ve blok tekrarlari merceğin ICINE kirpiliyor. Kirpmadan
+         once alt parca ve bantlar cemberin disina tasiyor, oradaki bos alan
+         zaten surround katmaninin yeri. */
+      dst.save(); clipLens(dst,w,h);
+      const nb=2+Math.floor(p.rnd()*5);
+      for(let k=0;k<nb;k++){
+        if(p.rnd()>0.78*p.a) continue;
+        const by=Math.floor(p.rnd()*h);
+        const bh=Math.max(3,p.rnd()*h*0.075);
+        const ox=(p.rnd()-0.5)*w*0.17*p.a;
+        if(p.rnd()<0.5){
+          /* yirtik: bant tamamen kaydirilmis haliyle DEGISTIRILIYOR */
+          dst.drawImage(st,0,by,w,bh, ox,by,w,bh);
+        }else{
+          /* hayalet: yalnizca kirmizi kanal kayiyor, altta siyah bosluk kalir */
+          dst.save(); dst.globalCompositeOperation="lighter";
+          dst.globalAlpha=0.85*p.a;
+          dst.drawImage(st._red,0,by,w,bh, ox,by,w,bh);
+          dst.restore();
+        }
+        /* yirtigin ust kenarinda ince karanlik cizgi: kesigi belli eder */
+        dst.save(); dst.globalAlpha=0.55*p.a; dst.fillStyle="#000";
+        dst.fillRect(0,by,w,Math.max(1,p.S)); dst.restore();
+      }
+      /* ---- SENKRON KOPMASI ----
+         Karelerin ~%14'unde kadraj bir yerden ikiye ayrilip alt parca yatayda
+         kayiyor ve sariliyor — bozuk bir sinyalin kilitlenememesi. */
+      if(p.rnd()<0.14*p.a){
+        const sy=Math.floor(h*(0.18+p.rnd()*0.64));
+        const ox=(p.rnd()<0.5?-1:1)*w*(0.06+p.rnd()*0.16);
+        const bh=h-sy;
+        dst.drawImage(st,0,sy,w,bh, ox,sy,w,bh);
+        dst.drawImage(st,0,sy,w,bh, ox+(ox<0?w:-w),sy,w,bh);   // sarma
+        dst.save(); dst.globalAlpha=0.70*p.a; dst.fillStyle="#000";
+        dst.fillRect(0,sy,w,Math.max(1,1.6*p.S)); dst.restore();
+      }
+      /* ---- BLOK TEKRARI ----
+         Kucuk dikdortgenler kadrajin baska bir yerinden kopyalaniyor:
+         sikistirma artigi / datamosh izi. */
+      const nblk=Math.round(lerp(0,5,p.a));
+      for(let k=0;k<nblk;k++){
+        if(p.rnd()>0.45) continue;
+        const bw2=w*(0.05+p.rnd()*0.13), bh2=h*(0.02+p.rnd()*0.06);
+        const sx2=p.rnd()*(w-bw2), sy2=p.rnd()*(h-bh2);
+        const dx2=p.rnd()*(w-bw2), dy2=sy2+(p.rnd()-0.5)*h*0.05;
+        dst.save(); dst.globalCompositeOperation="lighter";
+        dst.globalAlpha=0.80*p.a;
+        dst.drawImage(st._red,sx2,sy2,bw2,bh2, dx2,dy2,bw2,bh2);
+        dst.restore();
+      }
+      dst.restore();
+    }
+    /* Kimyasal leke, kare basina cok yavas kayiyor */
+    if(st._stain){
+      dst.save(); dst.globalCompositeOperation="multiply";
+      dst.globalAlpha=(0.62+0.12*Math.sin(p.f*0.03))*p.a;
+      dst.drawImage(st._stain,Math.sin(p.f*0.013)*w*0.010,Math.cos(p.f*0.011)*h*0.008);
+      dst.restore();
+    }
     grain(dst,w,h,p.rnd,0.070*p.a,150);         // film taneciği
+    /* ---- FILM YANIGI DELIGI ----
+       Seyrek: karelerin ~%5'i. Merkez kadrajin ortasina dogru sinirlandi,
+       yoksa delik lens cemberinin disinda, bos alanda aciliyor. */
+    if(p.rnd()<0.085){
+      const bx2=w/2+(p.rnd()-0.5)*w*0.60, by2=h/2+(p.rnd()-0.5)*h*0.60;
+      const R=w*(0.055+p.rnd()*0.095);
+      const g2=dst.createRadialGradient(bx2,by2,R*0.30,bx2,by2,R);
+      g2.addColorStop(0,"rgba(4,2,2,"+(0.94*p.a)+")");
+      g2.addColorStop(0.68,"rgba(104,26,8,"+(0.72*p.a)+")");
+      g2.addColorStop(0.86,"rgba(255,148,40,"+(0.88*p.a)+")");
+      g2.addColorStop(1,"rgba(0,0,0,0)");
+      dst.save(); dst.fillStyle=g2;
+      dst.beginPath(); dst.arc(bx2,by2,R,0,6.2832); dst.fill(); dst.restore();
+    }
     // seyrek kirmizi sizma
     if(p.rnd()<0.12){
       const g=dst.createLinearGradient(0,0,w,h);
