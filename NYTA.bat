@@ -17,7 +17,7 @@ rem  Surum damgasi: Chrome file:// sayfalarini onbellekten verebiliyor ve
 rem  guncellenen dosya eski haliyle aciliyordu. URL'e her acilista degisen bir
 rem  sorgu eklenince tarayici sayfayi yeni bir adres sayip diskten okuyor.
 set "V=%RANDOM%%RANDOM%"
-start "" "%CHROME%" --app="file:///%HTML:\=/%?v=%V%" --user-data-dir="%PROFILE%" --window-size=1680,1000 --window-position=60,40
+start "" "%CHROME%" --app="file:///%HTML:\=/%?v=%V%" --user-data-dir="%PROFILE%" --start-fullscreen
 exit /b 0
 
 :nochrome
